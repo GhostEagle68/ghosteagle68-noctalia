@@ -627,7 +627,9 @@
     "context-menu": {
       "open": "Open",
       "pin-to-dock": "Pin to dock",
-      "unpin-from-dock": "Unpin from dock"
+      "unpin-from-dock": "Unpin from dock",
+      "pin-to-taskbar": "Pin to taskbar",
+      "unpin-from-taskbar": "Unpin from taskbar"
     },
     "empty": {
       "no-results": "No results found",
