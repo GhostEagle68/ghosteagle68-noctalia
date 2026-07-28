@@ -1611,10 +1611,36 @@ void LauncherPanel::openAppActionsMenu(std::size_t index, float anchorX, float a
       m_config != nullptr && shell::dock::pinned_apps::containsEntry(m_config->config().dock.pinned, *match);
   const bool canPinToDock = m_config != nullptr && !dockPinned;
   const bool canUnpinFromDock = m_config != nullptr && dockPinned;
-
+  // Taskbar widgets keep their own `pinned` list under `[widget.<name>]` (see
+  // TaskbarWidget::pinnedConfigIds), separate from `[dock].pinned`. Mirror pin state across every
+  // configured taskbar widget so "Pin" here matches what right-clicking an icon in the taskbar does.
+  std::vector<std::string> taskbarWidgetNames;
+  if (m_config != nullptr) {
+    for (const auto& [name, widgetConfig] : m_config->config().widgets) {
+      if (widgetConfig.type == "taskbar") {
+        taskbarWidgetNames.push_back(name);
+      }
+    }
+  }
+  const bool hasTaskbarWidget = !taskbarWidgetNames.empty();
+  bool taskbarPinned = false;
+  if (hasTaskbarWidget) {
+    const auto& widgets = m_config->config().widgets;
+    for (const auto& name : taskbarWidgetNames) {
+      const auto it = widgets.find(name);
+      if (it != widgets.end() && shell::dock::pinned_apps::containsEntry(it->second.getStringList("pinned"), *match)) {
+        taskbarPinned = true;
+        break;
+      }
+    }
+  }
+  const bool canPinToTaskbar = hasTaskbarWidget && !taskbarPinned;
+  const bool canUnpinFromTaskbar = hasTaskbarWidget && taskbarPinned;
   constexpr std::int32_t kActionOpen = -1;
   constexpr std::int32_t kActionPinToDock = -2;
   constexpr std::int32_t kActionUnpinFromDock = -3;
+  constexpr std::int32_t kActionPinToTaskbar = -4;
+  constexpr std::int32_t kActionUnpinFromTaskbar = -5;
 
   std::vector<ContextMenuControlEntry> entries;
   entries.reserve(actionsCopy.size() + 2);
@@ -1648,6 +1674,27 @@ void LauncherPanel::openAppActionsMenu(std::size_t index, float anchorX, float a
         }
     );
   }
+  if (canPinToTaskbar) {
+    entries.push_back(
+        ContextMenuControlEntry{
+            .id = kActionPinToTaskbar,
+            .label = i18n::tr("launcher.context-menu.pin-to-taskbar"),
+            .enabled = true,
+            .separator = false,
+            .hasSubmenu = false,
+        }
+    );
+  } else if (canUnpinFromTaskbar) {
+    entries.push_back(
+        ContextMenuControlEntry{
+            .id = kActionUnpinFromTaskbar,
+            .label = i18n::tr("launcher.context-menu.unpin-from-taskbar"),
+            .enabled = true,
+            .separator = false,
+            .hasSubmenu = false,
+        }
+    );
+  }
   for (std::int32_t i = 0; i < static_cast<std::int32_t>(actionsCopy.size()); ++i) {
     entries.push_back(
         ContextMenuControlEntry{
@@ -1675,8 +1722,9 @@ void LauncherPanel::openAppActionsMenu(std::size_t index, float anchorX, float a
     PanelManager::instance().endAttachedPopup(parentSurface);
   });
 
-  m_actionsMenu->setOnActivate([this, base, actionsCopy = std::move(actionsCopy),
-                                entryForPin = *match](const ContextMenuControlEntry& entry) {
+  m_actionsMenu->setOnActivate([this, base, actionsCopy = std::move(actionsCopy), entryForPin = *match,
+                                taskbarWidgetNames =
+                                    std::move(taskbarWidgetNames)](const ContextMenuControlEntry& entry) {
     LauncherResult result = base;
     result.desktopActionId.clear();
     if (entry.id == kActionPinToDock) {
@@ -1697,6 +1745,39 @@ void LauncherPanel::openAppActionsMenu(std::size_t index, float anchorX, float a
       std::vector<std::string> pinned = m_config->config().dock.pinned;
       shell::dock::pinned_apps::removeEntry(pinned, entryForPin);
       (void)m_config->setOverride({"dock", "pinned"}, std::move(pinned));
+      return;
+    }
+    if (entry.id == kActionPinToTaskbar) {
+      if (m_config == nullptr || entryForPin.id.empty()) {
+        return;
+      }
+      const auto& widgets = m_config->config().widgets;
+      for (const auto& name : taskbarWidgetNames) {
+        const auto it = widgets.find(name);
+        std::vector<std::string> pinned =
+            it != widgets.end() ? it->second.getStringList("pinned") : std::vector<std::string>{};
+        if (shell::dock::pinned_apps::containsEntry(pinned, entryForPin)) {
+          continue;
+        }
+        pinned.push_back(entryForPin.id);
+        (void)m_config->setOverride({"widget", name, "pinned"}, std::move(pinned));
+      }
+      return;
+    }
+    if (entry.id == kActionUnpinFromTaskbar) {
+      if (m_config == nullptr) {
+        return;
+      }
+      const auto& widgets = m_config->config().widgets;
+      for (const auto& name : taskbarWidgetNames) {
+        const auto it = widgets.find(name);
+        if (it == widgets.end()) {
+          continue;
+        }
+        std::vector<std::string> pinned = it->second.getStringList("pinned");
+        shell::dock::pinned_apps::removeEntry(pinned, entryForPin);
+        (void)m_config->setOverride({"widget", name, "pinned"}, std::move(pinned));
+      }
       return;
     }
     if (entry.id >= 0 && entry.id < static_cast<std::int32_t>(actionsCopy.size())) {
