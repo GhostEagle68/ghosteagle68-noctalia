@@ -323,6 +323,13 @@ std::vector<std::string> TaskbarWidget::pinnedConfigIds() const {
   return it->second.getStringList("pinned");
 }
 
+bool TaskbarWidget::reorderEnabled() const {
+  if (m_groupByWorkspace || m_widgetName.empty()) {
+    return false;
+  }
+  return pinnedConfigIds().size() >= 2;
+}
+
 bool TaskbarWidget::taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry) {
   const std::string entryIdLower = StringUtils::toLower(entry.id);
   if (!entryIdLower.empty()) {

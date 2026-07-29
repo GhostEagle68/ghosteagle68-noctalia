@@ -1,6 +1,7 @@
 #pragma once
 
 #include "compositors/compositor_platform.h"
+#include "core/timer_manager.h"
 #include "shell/bar/widget.h"
 #include "system/desktop_entry.h"
 #include "system/icon_resolver.h"
@@ -122,6 +123,17 @@ private:
     std::size_t index = 0;
     std::uint64_t generation = 0;
   };
+  // Drag-to-reorder for pinned tiles in the flat strip.
+  struct DragState {
+    bool active = false;
+    bool armed = false; // hold fired; goes active on the next motion
+    std::size_t sourceIndex = 0;
+    std::size_t targetIndex = 0;
+    // Pointer position along the strip's layout axis: x when horizontal, y when vertical.
+    float startMain = 0.0f;
+    float currentMain = 0.0f;
+    Timer holdTimer;
+  };
 
   void doLayout(Renderer& renderer, float containerWidth, float containerHeight) override;
   void doUpdate(Renderer& renderer) override;
@@ -163,6 +175,7 @@ private:
   void activateOrLaunchPinned(const TaskModel& task);
   void launchDesktopEntry(const TaskModel& task);
   [[nodiscard]] std::vector<std::string> pinnedConfigIds() const;
+  [[nodiscard]] bool reorderEnabled() const;
   [[nodiscard]] static bool taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry);
   void setEntryPinned(const DesktopEntry& entry, bool pinned);
   [[nodiscard]] std::optional<DesktopEntry> desktopEntryForTask(const TaskModel& task) const;
@@ -198,6 +211,8 @@ private:
   std::string m_barPosition;
   std::string m_barName;
   std::string m_widgetName;
+  DragState m_drag;
+  bool m_suppressTileClick = false;
   bool m_rebuildPending = true;
   bool m_vertical = false;
   float m_containerWidth = 0.0f;
