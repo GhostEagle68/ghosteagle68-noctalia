@@ -176,6 +176,8 @@ private:
   void launchDesktopEntry(const TaskModel& task);
   [[nodiscard]] std::vector<std::string> pinnedConfigIds() const;
   [[nodiscard]] bool reorderEnabled() const;
+  [[nodiscard]] float pointerMainOnStrip(const InputArea& area, float localX, float localY) const;
+  [[nodiscard]] std::size_t computeDragTargetIndex() const;
   [[nodiscard]] static bool taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry);
   void setEntryPinned(const DesktopEntry& entry, bool pinned);
   [[nodiscard]] std::optional<DesktopEntry> desktopEntryForTask(const TaskModel& task) const;
@@ -213,6 +215,8 @@ private:
   std::string m_widgetName;
   DragState m_drag;
   bool m_suppressTileClick = false;
+
+  float m_tilePitchMain = 0.0f; // Main-axis distance between adjacent tiles; set while building the flat strip.
   bool m_rebuildPending = true;
   bool m_vertical = false;
   float m_containerWidth = 0.0f;

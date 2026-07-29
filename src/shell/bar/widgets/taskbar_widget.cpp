@@ -5,6 +5,7 @@
 #include "compositors/workspace_backend.h"
 #include "config/config_service.h"
 #include "core/deferred_call.h"
+#include "core/log.h"
 #include "i18n/i18n.h"
 #include "render/core/color.h"
 #include "render/core/renderer.h"
@@ -29,6 +30,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <linux/input-event-codes.h>
@@ -39,6 +41,9 @@
 #include <wayland-client-protocol.h>
 
 namespace {
+
+  constexpr Logger kLog("taskbar");
+  constexpr auto kDragHoldDelay = std::chrono::milliseconds(300);
 
   // Integer centering; optional odd spare pixel on the end side (right/bottom).
   [[nodiscard]] float centeredOffset(float extent, float content, float inset = 0.0f, bool oddSpareOnEnd = true) {
@@ -328,6 +333,21 @@ bool TaskbarWidget::reorderEnabled() const {
     return false;
   }
   return pinnedConfigIds().size() >= 2;
+}
+
+float TaskbarWidget::pointerMainOnStrip(const InputArea& area, float localX, float localY) const {
+  return m_vertical ? area.y() + localY : area.x() + localX;
+}
+
+std::size_t TaskbarWidget::computeDragTargetIndex() const {
+  const std::size_t pinnedCount = pinnedConfigIds().size();
+  if (m_tilePitchMain <= 0.0f || pinnedCount == 0) {
+    return m_drag.sourceIndex;
+  }
+  const float slots = (m_drag.currentMain - m_drag.startMain) / m_tilePitchMain;
+  const auto shifted =
+      static_cast<std::ptrdiff_t>(m_drag.sourceIndex) + static_cast<std::ptrdiff_t>(std::lround(slots));
+  return static_cast<std::size_t>(std::clamp<std::ptrdiff_t>(shifted, 0, static_cast<std::ptrdiff_t>(pinnedCount) - 1));
 }
 
 bool TaskbarWidget::taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry) {
@@ -732,7 +752,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         .generation = m_taskGeneration,
     };
   };
-
+  const std::size_t draggableTileCount = reorderEnabled() ? pinnedConfigIds().size() : 0;
   auto createTaskTile = [&](TaskRef taskRef, std::vector<TaskRef> cycleCandidates = {}, std::string cycleKey = {},
                             std::size_t badgeCount = 1) {
     // Unreachable at build time: every ref is built from a live m_tasks element at the current
@@ -752,6 +772,61 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
     }
     area->setOpacity(tileOpacity);
     area->setAcceptedButtons(InputArea::buttonMask({BTN_LEFT, BTN_RIGHT, BTN_MIDDLE}));
+    auto* dragArea = area.get();
+    const bool tileDraggable = taskRef.index < draggableTileCount;
+    area->setOnPress([this, dragArea, taskRef, tileDraggable](const InputArea::PointerData& data) {
+      if (data.pressed) {
+        // Any new press supersedes suppression left over from a drag that ended outside its tile.
+        m_suppressTileClick = false;
+      }
+      if (data.button != BTN_LEFT) {
+        return;
+      }
+      if (data.pressed) {
+        if (!tileDraggable) {
+          return;
+        }
+        m_drag = {};
+        m_drag.sourceIndex = taskRef.index;
+        m_drag.targetIndex = taskRef.index;
+        m_drag.startMain = pointerMainOnStrip(*dragArea, data.localX, data.localY);
+        m_drag.currentMain = m_drag.startMain;
+        m_drag.holdTimer.start(kDragHoldDelay, [this, taskRef]() {
+          if (m_drag.sourceIndex == taskRef.index && !m_drag.active) {
+            m_drag.armed = true;
+            kLog.debug("drag armed: tile {}", taskRef.index);
+          }
+        });
+        return;
+      }
+      if (!tileDraggable || m_drag.sourceIndex != taskRef.index) {
+        return;
+      }
+      m_drag.holdTimer.stop();
+      if (m_drag.active) {
+        m_suppressTileClick = true;
+      }
+      m_drag = {};
+    });
+    if (tileDraggable) {
+      area->setOnMotion([this, dragArea, taskRef](const InputArea::PointerData& data) {
+        if (m_drag.sourceIndex != taskRef.index || (!m_drag.armed && !m_drag.active)) {
+          return;
+        }
+        m_drag.active = true;
+        m_drag.currentMain = pointerMainOnStrip(*dragArea, data.localX, data.localY);
+        const std::size_t next = computeDragTargetIndex();
+        if (next != m_drag.targetIndex) {
+          m_drag.targetIndex = next;
+          kLog.debug("drag target -> {}", next);
+        }
+      });
+      area->setOnCancel([this, taskRef]() {
+        if (m_drag.sourceIndex == taskRef.index) {
+          m_drag = {};
+        }
+      });
+    }
 
     const WorkspaceModel* taskWorkspace = nullptr;
     if (m_groupByWorkspace && !task.workspaceKey.empty()) {
@@ -773,6 +848,10 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
                         cycleKey = std::move(cycleKey)](const InputArea::PointerData& data) {
         const TaskModel* current = resolveTask(m_tasks, taskRef, m_taskGeneration);
         if (current == nullptr) {
+          return;
+        }
+        if (m_suppressTileClick) {
+          m_suppressTileClick = false;
           return;
         }
 
@@ -1371,6 +1450,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
   }
   m_taskStrip->setPadding(0.0f, 0.0f, 0.0f, 0.0f);
   m_taskStrip->setGap(tileGap);
+  m_tilePitchMain = (m_vertical ? tileSize : tileWidthWithTitle) + tileGap;
   std::unordered_set<std::string> pinnedCycleKeysThisFrame;
   for (std::size_t i = 0; i < m_tasks.size(); ++i) {
     const auto& task = m_tasks[i];
