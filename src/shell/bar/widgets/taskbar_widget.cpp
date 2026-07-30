@@ -371,6 +371,41 @@ void TaskbarWidget::commitDragReorder() {
   });
 }
 
+void TaskbarWidget::beginDragVisual() {
+  if (m_drag.area == nullptr) {
+    return;
+  }
+  // Capture the resting position before leaving the flow — afterwards Flex closes the gap and the
+  // neighbours move, but this node keeps whatever position we give it.
+  m_drag.restMain = m_vertical ? m_drag.area->y() : m_drag.area->x();
+  m_drag.restCross = m_vertical ? m_drag.area->x() : m_drag.area->y();
+  m_drag.area->setParticipatesInLayout(false);
+  m_drag.area->setZIndex(200);
+}
+
+void TaskbarWidget::updateDragVisual() {
+  if (m_drag.area == nullptr || !m_drag.active) {
+    return;
+  }
+  const float main = m_drag.restMain + (m_drag.currentMain - m_drag.startMain);
+  if (m_vertical) {
+    m_drag.area->setPosition(m_drag.restCross, main);
+  } else {
+    m_drag.area->setPosition(main, m_drag.restCross);
+  }
+  requestRedraw();
+}
+
+void TaskbarWidget::endDragVisual() {
+  if (m_drag.area == nullptr) {
+    return;
+  }
+  m_drag.area->setZIndex(0);
+  m_drag.area->setParticipatesInLayout(true);
+  m_drag.area = nullptr;
+  requestRedraw();
+}
+
 bool TaskbarWidget::taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry) {
   const std::string entryIdLower = StringUtils::toLower(entry.id);
   if (!entryIdLower.empty()) {
@@ -813,6 +848,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         m_drag.targetIndex = taskRef.index;
         m_drag.startMain = pointerMainOnStrip(*dragArea, data.localX, data.localY);
         m_drag.currentMain = m_drag.startMain;
+        m_drag.area = dragArea;
         m_drag.holdTimer.start(kDragHoldDelay, [this, taskRef]() {
           if (m_drag.sourceIndex == taskRef.index && !m_drag.active) {
             m_drag.armed = true;
@@ -834,6 +870,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         kLog.debug("drag commit: {} -> {}", m_drag.sourceIndex, m_drag.targetIndex);
         commitDragReorder();
       }
+      endDragVisual();
       m_drag = {};
     });
     if (tileDraggable) {
@@ -845,16 +882,21 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         if (m_drag.sourceIndex != taskRef.index || (!m_drag.armed && !m_drag.active)) {
           return;
         }
-        m_drag.active = true;
+        if (!m_drag.active) {
+          m_drag.active = true;
+          beginDragVisual();
+        }
         m_drag.currentMain = pointerMainOnStrip(*dragArea, data.localX, data.localY);
         const std::size_t next = computeDragTargetIndex();
         if (next != m_drag.targetIndex) {
           m_drag.targetIndex = next;
           kLog.debug("drag target -> {}", next);
         }
+        updateDragVisual();
       });
       area->setOnCancel([this, taskRef]() {
         if (m_drag.sourceIndex == taskRef.index) {
+          endDragVisual();
           m_drag = {};
         }
       });

@@ -134,6 +134,10 @@ private:
     // Pointer position along the strip's layout axis: x when horizontal, y when vertical.
     float startMain = 0.0f;
     float currentMain = 0.0f;
+    // Visuals: the dragged tile leaves the layout flow so Flex stops repositioning it.
+    InputArea* area = nullptr;
+    float restMain = 0.0f;
+    float restCross = 0.0f;
     Timer holdTimer;
   };
 
@@ -181,6 +185,9 @@ private:
   [[nodiscard]] float pointerMainOnStrip(const InputArea& area, float localX, float localY) const;
   [[nodiscard]] std::size_t computeDragTargetIndex() const;
   void commitDragReorder();
+  void beginDragVisual();
+  void updateDragVisual();
+  void endDragVisual();
   [[nodiscard]] static bool taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry);
   void setEntryPinned(const DesktopEntry& entry, bool pinned);
   [[nodiscard]] std::optional<DesktopEntry> desktopEntryForTask(const TaskModel& task) const;
