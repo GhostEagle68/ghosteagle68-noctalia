@@ -129,6 +129,8 @@ private:
     bool armed = false; // hold fired; goes active on the next motion
     std::size_t sourceIndex = 0;
     std::size_t targetIndex = 0;
+    // m_taskGeneration when the drag began; a layout change invalidates the indices above.
+    std::uint64_t generation = 0;
     // Pointer position along the strip's layout axis: x when horizontal, y when vertical.
     float startMain = 0.0f;
     float currentMain = 0.0f;

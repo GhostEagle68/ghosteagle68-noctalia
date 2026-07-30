@@ -787,6 +787,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
           return;
         }
         m_drag = {};
+        m_drag.generation = m_taskGeneration;
         m_drag.sourceIndex = taskRef.index;
         m_drag.targetIndex = taskRef.index;
         m_drag.startMain = pointerMainOnStrip(*dragArea, data.localX, data.localY);
@@ -802,6 +803,10 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
       if (!tileDraggable || m_drag.sourceIndex != taskRef.index) {
         return;
       }
+      if (m_drag.generation != m_taskGeneration) {
+        m_drag = {};
+        return;
+      }
       m_drag.holdTimer.stop();
       if (m_drag.active) {
         m_suppressTileClick = true;
@@ -810,6 +815,10 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
     });
     if (tileDraggable) {
       area->setOnMotion([this, dragArea, taskRef](const InputArea::PointerData& data) {
+        if (m_drag.generation != m_taskGeneration) {
+          m_drag = {};
+          return;
+        }
         if (m_drag.sourceIndex != taskRef.index || (!m_drag.armed && !m_drag.active)) {
           return;
         }
