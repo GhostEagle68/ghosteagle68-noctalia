@@ -341,7 +341,8 @@ float TaskbarWidget::pointerMainOnStrip(const InputArea& area, float localX, flo
 }
 
 std::size_t TaskbarWidget::computeDragTargetIndex() const {
-  const std::size_t pinnedCount = pinnedConfigIds().size();
+  // Cached at drag start rather than re-read from config: this runs on every motion event.
+  const std::size_t pinnedCount = m_drag.pinnedCount;
   if (m_tilePitchMain <= 0.0f || pinnedCount == 0) {
     return m_drag.sourceIndex;
   }
@@ -844,6 +845,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         .generation = m_taskGeneration,
     };
   };
+
   const std::size_t draggableTileCount = reorderEnabled() ? pinnedConfigIds().size() : 0;
   auto createTaskTile = [&](TaskRef taskRef, std::vector<TaskRef> cycleCandidates = {}, std::string cycleKey = {},
                             std::size_t badgeCount = 1) {
@@ -948,6 +950,11 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         updateDragVisual();
       });
       area->setOnCancel([this, taskRef]() {
+        if (m_drag.generation != m_taskGeneration) {
+          // The strip was rebuilt under us, so m_drag.area no longer points at a live node.
+          m_drag = {};
+          return;
+        }
         if (m_drag.sourceIndex == taskRef.index) {
           endDragVisual();
           m_drag = {};

@@ -124,6 +124,7 @@ private:
     std::size_t index = 0;
     std::uint64_t generation = 0;
   };
+
   // Drag-to-reorder for pinned tiles in the flat strip.
   struct DragState {
     bool active = false;
