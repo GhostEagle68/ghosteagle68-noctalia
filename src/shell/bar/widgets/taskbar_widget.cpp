@@ -350,6 +350,27 @@ std::size_t TaskbarWidget::computeDragTargetIndex() const {
   return static_cast<std::size_t>(std::clamp<std::ptrdiff_t>(shifted, 0, static_cast<std::ptrdiff_t>(pinnedCount) - 1));
 }
 
+void TaskbarWidget::commitDragReorder() {
+  if (m_widgetName.empty() || m_drag.sourceIndex == m_drag.targetIndex) {
+    return;
+  }
+  std::vector<std::string> pinned = pinnedConfigIds();
+  if (m_drag.sourceIndex >= pinned.size() || m_drag.targetIndex >= pinned.size()) {
+    return;
+  }
+
+  std::string moved = std::move(pinned[m_drag.sourceIndex]);
+  pinned.erase(pinned.begin() + static_cast<std::ptrdiff_t>(m_drag.sourceIndex));
+  pinned.insert(pinned.begin() + static_cast<std::ptrdiff_t>(m_drag.targetIndex), std::move(moved));
+
+  // Writing config rebuilds the taskbar, which can destroy the InputArea whose handler we are
+  // inside — defer so the write happens after this event finishes dispatching.
+  ConfigService* config = &m_configService;
+  DeferredCall::callLater([config, widgetName = m_widgetName, pinned = std::move(pinned)]() mutable {
+    (void)config->setOverride({"widget", widgetName, "pinned"}, std::move(pinned));
+  });
+}
+
 bool TaskbarWidget::taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry) {
   const std::string entryIdLower = StringUtils::toLower(entry.id);
   if (!entryIdLower.empty()) {
@@ -810,6 +831,8 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
       m_drag.holdTimer.stop();
       if (m_drag.active) {
         m_suppressTileClick = true;
+        kLog.debug("drag commit: {} -> {}", m_drag.sourceIndex, m_drag.targetIndex);
+        commitDragReorder();
       }
       m_drag = {};
     });

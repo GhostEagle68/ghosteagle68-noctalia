@@ -180,6 +180,7 @@ private:
   [[nodiscard]] bool reorderEnabled() const;
   [[nodiscard]] float pointerMainOnStrip(const InputArea& area, float localX, float localY) const;
   [[nodiscard]] std::size_t computeDragTargetIndex() const;
+  void commitDragReorder();
   [[nodiscard]] static bool taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry);
   void setEntryPinned(const DesktopEntry& entry, bool pinned);
   [[nodiscard]] std::optional<DesktopEntry> desktopEntryForTask(const TaskModel& task) const;
