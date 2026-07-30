@@ -44,6 +44,9 @@ namespace {
 
   constexpr Logger kLog("taskbar");
   constexpr auto kDragHoldDelay = std::chrono::milliseconds(300);
+  // Main-axis travel that starts a drag outright, so picking a tile up does not have to wait out
+  // the hold delay. Large enough that an unsteady click cannot trip it.
+  constexpr float kDragArmDistance = 8.0f;
 
   // Integer centering; optional odd spare pixel on the end side (right/bottom).
   [[nodiscard]] float centeredOffset(float extent, float content, float inset = 0.0f, bool oddSpareOnEnd = true) {
@@ -350,13 +353,13 @@ std::size_t TaskbarWidget::computeDragTargetIndex() const {
   return static_cast<std::size_t>(std::clamp<std::ptrdiff_t>(shifted, 0, static_cast<std::ptrdiff_t>(pinnedCount) - 1));
 }
 
-void TaskbarWidget::commitDragReorder() {
+bool TaskbarWidget::commitDragReorder() {
   if (m_widgetName.empty() || m_drag.sourceIndex == m_drag.targetIndex) {
-    return;
+    return false;
   }
   std::vector<std::string> pinned = pinnedConfigIds();
   if (m_drag.sourceIndex >= pinned.size() || m_drag.targetIndex >= pinned.size()) {
-    return;
+    return false;
   }
 
   std::string moved = std::move(pinned[m_drag.sourceIndex]);
@@ -369,6 +372,7 @@ void TaskbarWidget::commitDragReorder() {
   DeferredCall::callLater([config, widgetName = m_widgetName, pinned = std::move(pinned)]() mutable {
     (void)config->setOverride({"widget", widgetName, "pinned"}, std::move(pinned));
   });
+  return true;
 }
 
 void TaskbarWidget::beginDragVisual() {
@@ -379,15 +383,24 @@ void TaskbarWidget::beginDragVisual() {
   // neighbours move, but this node keeps whatever position we give it.
   m_drag.restMain = m_vertical ? m_drag.area->y() : m_drag.area->x();
   m_drag.restCross = m_vertical ? m_drag.area->x() : m_drag.area->y();
+  m_drag.pinnedCount = pinnedConfigIds().size();
   m_drag.area->setParticipatesInLayout(false);
   m_drag.area->setZIndex(200);
+  syncDragSpacer();
 }
 
 void TaskbarWidget::updateDragVisual() {
   if (m_drag.area == nullptr || !m_drag.active) {
     return;
   }
-  const float main = m_drag.restMain + (m_drag.currentMain - m_drag.startMain);
+  // Slot i sits at restMain + (i - sourceIndex) * pitch, so clamping travel to the first and last
+  // slots keeps the tile from wandering somewhere it could never be dropped.
+  const auto source = static_cast<std::ptrdiff_t>(m_drag.sourceIndex);
+  const auto last = static_cast<std::ptrdiff_t>(m_drag.pinnedCount) - 1;
+  const float minMain = m_drag.restMain - static_cast<float>(source) * m_tilePitchMain;
+  const float maxMain = m_drag.restMain + static_cast<float>(last - source) * m_tilePitchMain;
+  const float travelled = m_drag.restMain + (m_drag.currentMain - m_drag.startMain);
+  const float main = (last > 0) ? std::clamp(travelled, minMain, maxMain) : travelled;
   if (m_vertical) {
     m_drag.area->setPosition(m_drag.restCross, main);
   } else {
@@ -400,10 +413,35 @@ void TaskbarWidget::endDragVisual() {
   if (m_drag.area == nullptr) {
     return;
   }
+  if (m_drag.spacer != nullptr && m_taskStrip != nullptr) {
+    (void)m_taskStrip->removeChild(m_drag.spacer);
+    m_drag.spacer = nullptr;
+  }
   m_drag.area->setZIndex(0);
   m_drag.area->setParticipatesInLayout(true);
   m_drag.area = nullptr;
   requestRedraw();
+}
+
+void TaskbarWidget::syncDragSpacer() {
+  if (m_taskStrip == nullptr || m_drag.area == nullptr) {
+    return;
+  }
+  // The dragged tile still holds a slot in the child vector but no longer participates in layout,
+  // so a target past the source needs one extra slot to land in the right visual gap.
+  const std::size_t insertAt = m_drag.targetIndex > m_drag.sourceIndex ? m_drag.targetIndex + 1 : m_drag.targetIndex;
+
+  std::unique_ptr<Node> held;
+  if (m_drag.spacer != nullptr) {
+    held = m_taskStrip->removeChild(m_drag.spacer);
+  } else {
+    held = ui::node({
+        .frameWidth = m_drag.area->width(),
+        .frameHeight = m_drag.area->height(),
+        .hitTestVisible = false,
+    });
+  }
+  m_drag.spacer = m_taskStrip->insertChildAt(insertAt, std::move(held));
 }
 
 bool TaskbarWidget::taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry) {
@@ -868,7 +906,16 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
       if (m_drag.active) {
         m_suppressTileClick = true;
         kLog.debug("drag commit: {} -> {}", m_drag.sourceIndex, m_drag.targetIndex);
-        commitDragReorder();
+        if (commitDragReorder()) {
+          // The deferred config write rebuilds the strip and destroys these nodes; restoring them
+          // now would briefly relayout at the old order and snap the tile back. Park the tile in
+          // the gap the spacer is holding so the strip looks settled while that write lands.
+          if (m_drag.area != nullptr && m_drag.spacer != nullptr) {
+            m_drag.area->setPosition(m_drag.spacer->x(), m_drag.spacer->y());
+          }
+          m_drag.area = nullptr;
+          m_drag.spacer = nullptr;
+        }
       }
       endDragVisual();
       m_drag = {};
@@ -879,18 +926,29 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
           m_drag = {};
           return;
         }
-        if (m_drag.sourceIndex != taskRef.index || (!m_drag.armed && !m_drag.active)) {
+        // area is set on press and cleared on release, so it doubles as "this tile is held".
+        // Without it a plain hover would satisfy the distance check below and start a drag.
+        if (m_drag.area == nullptr || m_drag.sourceIndex != taskRef.index) {
+          return;
+        }
+        const float main = pointerMainOnStrip(*dragArea, data.localX, data.localY);
+        if (!m_drag.armed && !m_drag.active && std::abs(main - m_drag.startMain) >= kDragArmDistance) {
+          m_drag.holdTimer.stop();
+          m_drag.armed = true;
+        }
+        if (!m_drag.armed && !m_drag.active) {
           return;
         }
         if (!m_drag.active) {
           m_drag.active = true;
           beginDragVisual();
         }
-        m_drag.currentMain = pointerMainOnStrip(*dragArea, data.localX, data.localY);
+        m_drag.currentMain = main;
         const std::size_t next = computeDragTargetIndex();
         if (next != m_drag.targetIndex) {
           m_drag.targetIndex = next;
           kLog.debug("drag target -> {}", next);
+          syncDragSpacer();
         }
         updateDragVisual();
       });

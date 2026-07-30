@@ -19,6 +19,7 @@ class ContextMenuPopup;
 class ConfigService;
 class Flex;
 class InputArea;
+class Node;
 class TaskbarWidgetTestAccess;
 struct wl_output;
 struct zwlr_foreign_toplevel_handle_v1;
@@ -138,6 +139,8 @@ private:
     InputArea* area = nullptr;
     float restMain = 0.0f;
     float restCross = 0.0f;
+    Node* spacer = nullptr;      // invisible placeholder that holds the drop gap open
+    std::size_t pinnedCount = 0; // pin count when the drag began; bounds the travel range
     Timer holdTimer;
   };
 
@@ -184,10 +187,11 @@ private:
   [[nodiscard]] bool reorderEnabled() const;
   [[nodiscard]] float pointerMainOnStrip(const InputArea& area, float localX, float localY) const;
   [[nodiscard]] std::size_t computeDragTargetIndex() const;
-  void commitDragReorder();
+  [[nodiscard]] bool commitDragReorder();
   void beginDragVisual();
   void updateDragVisual();
   void endDragVisual();
+  void syncDragSpacer();
   [[nodiscard]] static bool taskMatchesDesktopEntry(const TaskModel& task, const DesktopEntry& entry);
   void setEntryPinned(const DesktopEntry& entry, bool pinned);
   [[nodiscard]] std::optional<DesktopEntry> desktopEntryForTask(const TaskModel& task) const;
