@@ -5,7 +5,6 @@
 #include "compositors/workspace_backend.h"
 #include "config/config_service.h"
 #include "core/deferred_call.h"
-#include "core/log.h"
 #include "i18n/i18n.h"
 #include "render/core/color.h"
 #include "render/core/renderer.h"
@@ -42,7 +41,6 @@
 
 namespace {
 
-  constexpr Logger kLog("taskbar");
   constexpr auto kDragHoldDelay = std::chrono::milliseconds(300);
   // Main-axis travel that starts a drag outright, so picking a tile up does not have to wait out
   // the hold delay. Large enough that an unsteady click cannot trip it.
@@ -890,7 +888,6 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         m_drag.holdTimer.start(kDragHoldDelay, [this, taskRef]() {
           if (m_drag.sourceIndex == taskRef.index && !m_drag.active) {
             m_drag.armed = true;
-            kLog.debug("drag armed: tile {}", taskRef.index);
           }
         });
         return;
@@ -905,7 +902,6 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
       m_drag.holdTimer.stop();
       if (m_drag.active) {
         m_suppressTileClick = true;
-        kLog.debug("drag commit: {} -> {}", m_drag.sourceIndex, m_drag.targetIndex);
         if (commitDragReorder()) {
           // The deferred config write rebuilds the strip and destroys these nodes; restoring them
           // now would briefly relayout at the old order and snap the tile back. Park the tile in
@@ -947,7 +943,6 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         const std::size_t next = computeDragTargetIndex();
         if (next != m_drag.targetIndex) {
           m_drag.targetIndex = next;
-          kLog.debug("drag target -> {}", next);
           syncDragSpacer();
         }
         updateDragVisual();
