@@ -1395,6 +1395,10 @@ void PipeWireService::onDeviceInfo(std::uint32_t id, const pw_device_info* info)
     for (std::uint32_t i = 0; i < info->n_params; ++i) {
       if (info->params[i].id == SPA_PARAM_Route) {
         pw_device_enum_params(it->second.proxy, 0, SPA_PARAM_Route, 0, UINT32_MAX, nullptr);
+     } else if (info->params[i].id == SPA_PARAM_EnumProfile) {
+        pw_device_enum_params(it->second.proxy, 0, SPA_PARAM_EnumProfile, 0, UINT32_MAX, nullptr);
+     } else if (info->params[i].id == SPA_PARAM_Profile) {
+        pw_device_enum_params(it->second.proxy, 0, SPA_PARAM_Profile, 0, UINT32_MAX, nullptr);
       }
     }
   }
@@ -1403,10 +1407,60 @@ void PipeWireService::onDeviceInfo(std::uint32_t id, const pw_device_info* info)
 void PipeWireService::onDeviceParam(
     std::uint32_t id, std::uint32_t paramId, std::uint32_t index, std::uint32_t, const spa_pod* param
 ) {
-  if (paramId != SPA_PARAM_Route || param == nullptr) {
+  if (param == nullptr) {
     return;
   }
 
+  if (paramId == SPA_PARAM_EnumProfile || paramId == SPA_PARAM_Profile) {
+    auto it = m_devices.find(id);
+    if (it == m_devices.end()) {
+      return;
+    }
+
+    std::int32_t profileIndex = -1;
+    const char* profileName = nullptr;
+    const char* profileDescription = nullptr;
+    std::int32_t profilePriority = 0;
+    if (spa_pod_parse_object(
+            param, SPA_TYPE_OBJECT_ParamProfile, nullptr, SPA_PARAM_PROFILE_index, SPA_POD_Int(&profileIndex),
+            SPA_PARAM_PROFILE_name, SPA_POD_OPT_String(&profileName), SPA_PARAM_PROFILE_description,
+            SPA_POD_OPT_String(&profileDescription), SPA_PARAM_PROFILE_priority, SPA_POD_OPT_Int(&profilePriority)
+        )
+        < 0) {
+      return;
+    }
+
+    const spa_pod_prop* availProp = spa_pod_find_prop(param, nullptr, SPA_PARAM_PROFILE_available);
+    std::uint32_t profileAvailable = SPA_PARAM_AVAILABILITY_unknown;
+    if (availProp != nullptr) {
+      spa_pod_get_id(&availProp->value, &profileAvailable);
+    }
+
+    DeviceProfileData profile;
+    profile.index = profileIndex >= 0 ? profileIndex : static_cast<std::int32_t>(index);
+    profile.name = profileName != nullptr ? profileName : "";
+    profile.description = profileDescription != nullptr ? profileDescription : "";
+    profile.priority = profilePriority;
+    profile.available = profileAvailable;
+
+    if (paramId == SPA_PARAM_EnumProfile) {
+      const auto existing = std::ranges::find(it->second.profiles, profile.index, &DeviceProfileData::index);
+      if (existing == it->second.profiles.end()) {
+        it->second.profiles.push_back(profile);
+      } else {
+        *existing = profile;
+      }
+    } else {
+      it->second.activeProfileIndex = profile.index;
+    }
+
+    rebuildState();
+    return;
+  }
+
+  if (paramId != SPA_PARAM_Route) {
+    return;
+  }
   auto it = m_devices.find(id);
   if (it == m_devices.end()) {
     return;
