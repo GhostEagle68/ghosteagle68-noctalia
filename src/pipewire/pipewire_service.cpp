@@ -24,6 +24,7 @@
 #include <spa/param/param.h>
 #include <spa/param/props.h>
 #include <spa/param/route.h>
+#include <spa/param/profile.h>
 #include <spa/pod/builder.h>
 #include <spa/pod/iter.h>
 #include <spa/pod/parser.h>
@@ -925,6 +926,7 @@ void PipeWireService::onRegistryGlobal(std::uint32_t id, const char* type, std::
     DeviceData device;
     device.service = this;
     device.id = id;
+    device.isBluetooth = dictGet(props, "device.api") == "bluez5";
     auto [it, inserted] = m_devices.insert_or_assign(id, std::move(device));
 
     auto& stored = it->second;
@@ -935,8 +937,15 @@ void PipeWireService::onRegistryGlobal(std::uint32_t id, const char* type, std::
         stored.listener = new spa_hook{};
         spa_zero(*stored.listener);
         pw_device_add_listener(proxy, stored.listener, &kDeviceEvents, &stored);
-        std::uint32_t params[] = {SPA_PARAM_Route};
-        pw_device_subscribe_params(proxy, params, 1);
+        if (stored.isBluetooth) {
+          std::uint32_t params[] = {SPA_PARAM_Route, SPA_PARAM_EnumProfile, SPA_PARAM_Profile};
+          pw_device_subscribe_params(proxy, params, 3);
+          pw_device_enum_params(proxy, 0, SPA_PARAM_EnumProfile, 0, UINT32_MAX, nullptr);
+          pw_device_enum_params(proxy, 0, SPA_PARAM_Profile, 0, UINT32_MAX, nullptr);
+        } else {
+          std::uint32_t params[] = {SPA_PARAM_Route};
+          pw_device_subscribe_params(proxy, params, 1);
+        }
         pw_device_enum_params(proxy, 0, SPA_PARAM_Route, 0, UINT32_MAX, nullptr);
       }
     }
