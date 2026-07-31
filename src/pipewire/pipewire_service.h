@@ -21,6 +21,12 @@ class ConfigService;
 class IpcService;
 class WirePlumberMixer;
 
+struct AudioCodecOption {
+  std::int32_t profileIndex = -1;
+  std::string label;
+
+  bool operator==(const AudioCodecOption&) const = default;
+};
 struct AudioNode {
   std::uint32_t id = 0;
   std::string name;
@@ -36,6 +42,10 @@ struct AudioNode {
   std::uint32_t channelCount = 0;
   bool isDefault = false;
   bool available = true; // false for a device whose active route is unavailable (e.g. unplugged HDMI)
+
+  std::uint32_t deviceId = 0; // Bluetooth codec/profile options for this device (e.g. AAC/SBC/LDAC), empty for non-Bluetooth devices or Bluetooth devices with only one usable profile.
+  std::vector<AudioCodecOption> codecOptions;
+  std::size_t activeCodecIndex = static_cast<std::size_t>(-1);
 
   bool operator==(const AudioNode&) const = default;
 };
@@ -111,6 +121,9 @@ public:
   void setSourceVolume(std::uint32_t id, float volume);
   void setSourceMuted(std::uint32_t id, bool muted);
   void setDefaultSource(std::uint32_t id);
+  // Applies a PipeWire device profile by index (the mechanism Bluetooth codec choice is exposed
+  // through — see AudioNode::codecOptions). No-op if the device is no longer known. 
+  void setDeviceProfile(std::uint32_t deviceId, std::int32_t profileIndex);
 
   // Convenience (operates on default sink/source)
   void setVolume(float volume);
@@ -136,6 +149,13 @@ public:
     std::int32_t priority = 0;
     std::uint32_t available = SPA_PARAM_AVAILABILITY_unknown;
     bool muted = false;
+  };
+  struct DeviceProfileData {
+    std::int32_t index = -1;
+    std::string name;
+    std::string description;
+    std::int32_t priority = 0;
+    std::uint32_t available = SPA_PARAM_AVAILABILITY_unknown;
   };
   struct NodeData {
     PipeWireService* service = nullptr;
@@ -190,6 +210,9 @@ public:
     struct pw_device* proxy = nullptr;
     spa_hook* listener = nullptr;
     std::vector<DeviceRouteData> routes;
+    bool isBluetooth = false;
+    std::vector<DeviceProfileData> profiles;
+    std::int32_t activeProfileIndex = -1;
   };
   struct LinkData {
     std::uint32_t id = 0;
