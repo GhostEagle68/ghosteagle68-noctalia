@@ -646,21 +646,26 @@ std::unique_ptr<Flex> HomeTab::create() {
 
 std::unique_ptr<Flex> HomeTab::createHeaderActions() {
   const float scale = contentScale();
-  return ui::row(
+  auto row = ui::row(
       {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
       ui::button({
           .out = &m_settingsButton,
           .glyph = "settings",
           .onClick = []() { PanelManager::instance().openSettingsWindow(); },
           .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
-      }),
-      ui::button({
-          .out = &m_sessionButton,
-          .glyph = "shutdown",
-          .onClick = []() { PanelManager::instance().togglePanel("session"); },
-          .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
       })
   );
+  if (m_config == nullptr || m_config->config().controlCenter.showSessionButton) {
+    row->addChild(
+        ui::button({
+            .out = &m_sessionButton,
+            .glyph = "shutdown",
+            .onClick = []() { PanelManager::instance().togglePanel("session"); },
+            .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
+        })
+    );
+  }
+  return row;
 }
 
 void HomeTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight) {

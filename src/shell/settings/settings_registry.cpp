@@ -1418,6 +1418,11 @@ namespace settings {
         tr("settings.schema.panels.home-shortcuts-show-labels.description"), {"control_center", "show_shortcut_labels"},
         ToggleSetting{cfg.controlCenter.showShortcutLabels}, "shortcuts labels text hide show titles"
     ));
+    entries.push_back(makeEntry(
+        SettingsSection::ControlCenter, "general", tr("settings.schema.panels.home-session-button.label"),
+        tr("settings.schema.panels.home-session-button.description"), {"control_center", "show_session_button"},
+        ToggleSetting{cfg.controlCenter.showSessionButton}, "session button show hide"
+    ));
     {
       MultiSelectSetting tabs;
       const auto catalog = ControlCenterPanel::hideableTabCatalog();

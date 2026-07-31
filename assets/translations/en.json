@@ -2254,6 +2254,10 @@
           "description": "Choose up to six shortcut buttons for the home tab",
           "label": "Home Shortcuts"
         },
+        "home-session-button": {
+          "description": "Show a button for session actions (lock, suspend, reboot, shutdown, logout)",
+          "label": "Show Session Button"
+        },
         "home-shortcuts-show-labels": {
           "description": "Display text labels under shortcut icons in the home tab",
           "label": "Show Shortcut Labels"
