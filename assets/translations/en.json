@@ -2236,6 +2236,10 @@
           "description": "Draw an outline on floating panels",
           "label": "Borders"
         },
+        "control-center-close-button": {
+          "description": "Show a close button on the control center panel",
+          "label": "Show Close Button"
+        },
         "control-center-sidebar": {
           "description": "Choose how to display the sidebar",
           "label": "Sidebar"

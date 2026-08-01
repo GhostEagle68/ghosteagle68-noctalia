@@ -1423,6 +1423,11 @@ namespace settings {
         tr("settings.schema.panels.home-settings-button.description"), {"control_center", "show_settings_button"},
         ToggleSetting{cfg.controlCenter.showSettingsButton}, "settings button show hide"
     ));
+    entries.push_back(makeEntry(
+        SettingsSection::ControlCenter, "general", tr("settings.schema.panels.control-center-close-button.label"),
+        tr("settings.schema.panels.control-center-close-button.description"), {"control_center", "show_close_button"},
+        ToggleSetting{cfg.controlCenter.showCloseButton}, "close button show hide"
+    ));
     {
       MultiSelectSetting tabs;
       const auto catalog = ControlCenterPanel::hideableTabCatalog();
