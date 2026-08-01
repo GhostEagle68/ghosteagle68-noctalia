@@ -646,14 +646,18 @@ std::unique_ptr<Flex> HomeTab::create() {
 
 std::unique_ptr<Flex> HomeTab::createHeaderActions() {
   const float scale = contentScale();
-  return ui::row(
-      {.align = FlexAlign::Center, .gap = Style::spaceSm * scale},
-      ui::button({
-          .out = &m_settingsButton,
-          .glyph = "settings",
-          .onClick = []() { PanelManager::instance().openSettingsWindow(); },
-          .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
-      }),
+  auto row = ui::row({.align = FlexAlign::Center, .gap = Style::spaceSm * scale});
+  if (m_config == nullptr || m_config->config().controlCenter.showSettingsButton) {
+    row->addChild(
+        ui::button({
+            .out = &m_settingsButton,
+            .glyph = "settings",
+            .onClick = []() { PanelManager::instance().openSettingsWindow(); },
+            .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
+        })
+    );
+  }
+  row->addChild(
       ui::button({
           .out = &m_sessionButton,
           .glyph = "shutdown",
@@ -661,6 +665,7 @@ std::unique_ptr<Flex> HomeTab::createHeaderActions() {
           .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
       })
   );
+  return row;
 }
 
 void HomeTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight) {
