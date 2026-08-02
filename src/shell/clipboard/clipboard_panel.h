@@ -30,7 +30,6 @@ public:
   ClipboardPanel(ClipboardService* clipboard, ConfigService* config, AsyncTextureCache* asyncTextures);
   ~ClipboardPanel() override;
   void setActivateCallback(std::function<void(const ClipboardEntry&)> callback);
-  void clearHistoryFromIpc();
 
   void create() override;
   void onOpen(std::string_view context) override;
@@ -52,6 +51,7 @@ private:
   void updatePreviewActions();
   void rebuildPreview(Renderer& renderer, float width, float height);
   void selectIndex(std::size_t index);
+  void selectByStorageId(std::string storageId);
   void activateSelected();
   void togglePinSelected();
   void runImageAction();

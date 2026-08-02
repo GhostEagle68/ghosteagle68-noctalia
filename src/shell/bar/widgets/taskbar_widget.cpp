@@ -27,6 +27,7 @@
 #include "xdg-shell-client-protocol.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cmath>
 #include <functional>
@@ -201,12 +202,13 @@ TaskbarWidget::TaskbarWidget(
     : m_platform(platform), m_configService(config), m_output(output), m_configOptions(std::move(options)),
       m_showAllOutputs(m_configOptions.showAllOutputs), m_focusedOutputOnly(m_configOptions.focusedOutputOnly),
       m_minimal(m_configOptions.minimal), m_showActiveIndicator(m_configOptions.showActiveIndicator),
-      m_activeOpacity(m_configOptions.activeOpacity), m_inactiveOpacity(m_configOptions.inactiveOpacity),
-      m_pinnedOpacity(m_configOptions.pinnedOpacity), m_focusedColor(m_configOptions.focusedColor),
-      m_occupiedColor(m_configOptions.occupiedColor), m_emptyColor(m_configOptions.emptyColor),
-      m_urgentColor(m_configOptions.urgentColor), m_windowTitleMaxWidth(m_configOptions.windowTitleMaxWidth),
-      m_taskbarMaxWidth(m_configOptions.taskbarMaxWidth), m_barPosition(std::move(m_configOptions.barPosition)),
-      m_barName(std::move(m_configOptions.barName)), m_widgetName(std::move(m_configOptions.widgetName)) {
+      m_activeIndicatorColor(m_configOptions.activeIndicatorColor), m_activeOpacity(m_configOptions.activeOpacity),
+      m_inactiveOpacity(m_configOptions.inactiveOpacity), m_pinnedOpacity(m_configOptions.pinnedOpacity),
+      m_focusedColor(m_configOptions.focusedColor), m_occupiedColor(m_configOptions.occupiedColor),
+      m_emptyColor(m_configOptions.emptyColor), m_urgentColor(m_configOptions.urgentColor),
+      m_windowTitleMaxWidth(m_configOptions.windowTitleMaxWidth), m_taskbarMaxWidth(m_configOptions.taskbarMaxWidth),
+      m_barPosition(std::move(m_configOptions.barPosition)), m_barName(std::move(m_configOptions.barName)),
+      m_widgetName(std::move(m_configOptions.widgetName)) {
   syncWorkspaceGroupingCapability();
   buildDesktopIconIndex();
 }
@@ -264,6 +266,14 @@ bool TaskbarWidget::taskInWorkspaceGroup(const TaskModel& task, const WorkspaceM
     return true;
   }
   return !ws.workspace.name.empty() && task.workspaceKey == ws.workspace.name;
+}
+
+const TaskbarWidget::TaskModel*
+TaskbarWidget::resolveTask(const std::vector<TaskModel>& tasks, TaskRef ref, std::uint64_t currentGeneration) {
+  if (ref.generation != currentGeneration || ref.index >= tasks.size()) {
+    return nullptr;
+  }
+  return &tasks[ref.index];
 }
 
 void TaskbarWidget::activateTaskModel(const TaskModel& task) {
@@ -589,6 +599,8 @@ void TaskbarWidget::rebuild(Renderer& renderer) {
     return;
   }
   m_activeUsesFocusedColor = !m_focusedOutputOnly || isFocusedOutput();
+  m_taskTileAreas.clear();
+  m_taskTileAreas.reserve(m_tasks.size());
   clearChildren(m_taskStrip);
   buildTaskButtons(renderer);
 }
@@ -705,8 +717,26 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
     });
   };
 
-  auto createTaskTile = [&](const TaskModel& task, std::vector<TaskModel> cycleCandidates = {},
-                            std::string cycleKey = {}, std::size_t badgeCount = 1) {
+  // Only elements of m_tasks have a meaningful position; any other TaskModel would yield a
+  // garbage index that the generation check cannot catch.
+  const auto taskRefFor = [this](const TaskModel& task) {
+    assert(&task >= m_tasks.data() && &task < m_tasks.data() + m_tasks.size());
+    return TaskRef{
+        .index = static_cast<std::size_t>(&task - m_tasks.data()),
+        .generation = m_taskGeneration,
+    };
+  };
+
+  auto createTaskTile = [&](TaskRef taskRef, std::vector<TaskRef> cycleCandidates = {}, std::string cycleKey = {},
+                            std::size_t badgeCount = 1) {
+    // Unreachable at build time: every ref is built from a live m_tasks element at the current
+    // generation. Kept as a release-safe guard so a stale ref cannot deref null.
+    const TaskModel* taskModel = resolveTask(m_tasks, taskRef, m_taskGeneration);
+    assert(taskModel != nullptr);
+    if (taskModel == nullptr) {
+      return ui::inputArea({});
+    }
+    const TaskModel& task = *taskModel;
     auto area = ui::inputArea({});
     area->setFrameSize(tileWidthWithTitle, tileSize);
     float tileOpacity = task.active ? m_activeOpacity : m_inactiveOpacity;
@@ -726,46 +756,47 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         }
       }
     }
-    const std::optional<Workspace> clickWorkspace =
-        taskWorkspace != nullptr ? std::optional<Workspace>(taskWorkspace->workspace) : std::nullopt;
-    wl_output* const taskWsHost = taskWorkspace != nullptr ? workspaceHostOutput(*taskWorkspace) : m_output;
-
     if (task.firstHandle != nullptr
         || !task.workspaceWindowId.empty()
         || (compositors::isKde() && (!task.title.empty() || !task.appId.empty()))
-        || clickWorkspace.has_value()
+        || taskWorkspace != nullptr
         || !cycleCandidates.empty()
         || task.pinned) {
       auto* areaPtr = area.get();
-      area->setOnClick([this, task, areaPtr, handle = task.firstHandle, windowId = task.workspaceWindowId,
-                        clickWorkspace, taskWsHost, cycleCandidates = std::move(cycleCandidates),
+      area->setOnClick([this, taskRef, areaPtr, cycleCandidates = std::move(cycleCandidates),
                         cycleKey = std::move(cycleKey)](const InputArea::PointerData& data) {
-        if (task.pinned) {
+        const TaskModel* current = resolveTask(m_tasks, taskRef, m_taskGeneration);
+        if (current == nullptr) {
+          return;
+        }
+
+        if (current->pinned) {
           if (data.button == BTN_MIDDLE) {
-            if (task.running) {
-              closeTaskModel(task);
+            if (current->running) {
+              closeTaskModel(*current);
             }
             return;
           }
           if (data.button == BTN_LEFT) {
-            activateOrLaunchPinned(task);
+            activateOrLaunchPinned(*current);
             return;
           }
           if (data.button == BTN_RIGHT && areaPtr != nullptr) {
-            openTaskContextMenu(task, *areaPtr);
+            openTaskContextMenu(*current, *areaPtr);
           }
           return;
         }
         if (data.button == BTN_MIDDLE) {
           if (!cycleCandidates.empty()) {
-            for (const auto& candidate : cycleCandidates) {
-              if (candidate.active) {
-                closeTaskModel(candidate);
+            for (const TaskRef candidate : cycleCandidates) {
+              const TaskModel* currentCandidate = resolveTask(m_tasks, candidate, m_taskGeneration);
+              if (currentCandidate != nullptr && currentCandidate->active) {
+                closeTaskModel(*currentCandidate);
                 return;
               }
             }
           }
-          closeTaskModel(task);
+          closeTaskModel(*current);
           return;
         }
         if (data.button == BTN_LEFT) {
@@ -774,30 +805,20 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
             if (cursor >= cycleCandidates.size()) {
               cursor = 0;
             }
-            const TaskModel& target = cycleCandidates[cursor];
+            const TaskModel* target = resolveTask(m_tasks, cycleCandidates[cursor], m_taskGeneration);
             cursor = (cursor + 1) % cycleCandidates.size();
-            activateTaskModel(target);
+            if (target != nullptr) {
+              activateTaskModel(*target);
+            }
             return;
           }
-          if (handle != nullptr) {
-            m_platform.activateToplevel(handle);
-            return;
-          }
-          if (!windowId.empty()) {
-            m_platform.focusCompositorWindow(windowId);
-            return;
-          }
-          if (compositors::isKde() && (!task.title.empty() || !task.appId.empty())) {
-            m_platform.activateKdeWindow(task.title, task.appId);
-            return;
-          }
-          if (clickWorkspace.has_value()) {
-            m_platform.activateWorkspace(taskWsHost, *clickWorkspace);
-          }
+          activateTaskModel(*current);
           return;
         }
-        if (data.button == BTN_RIGHT && areaPtr != nullptr && (handle != nullptr || compositors::isKde())) {
-          openTaskContextMenu(task, *areaPtr);
+        if (data.button == BTN_RIGHT
+            && areaPtr != nullptr
+            && (current->firstHandle != nullptr || compositors::isKde())) {
+          openTaskContextMenu(*current, *areaPtr);
         }
       });
     } else {
@@ -888,7 +909,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
       if (showWindowTitle) {
         const float lineThickness = d * 0.5f;
         auto indicator = ui::box({
-            .fill = colorSpecFromRole(ColorRole::Primary),
+            .fill = m_activeIndicatorColor,
             .radius = lineThickness * 0.5f,
             .width = tileWidthWithTitle - tilePadding * 2,
             .height = lineThickness,
@@ -897,7 +918,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         area->addChild(std::move(indicator));
       } else {
         auto indicator = ui::box({
-            .fill = colorSpecFromRole(ColorRole::Primary),
+            .fill = m_activeIndicatorColor,
             .radius = resolvedBarCapsuleRadius(d, d),
             .width = d,
             .height = d,
@@ -906,11 +927,14 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
         area->addChild(std::move(indicator));
       }
     }
-    if (!task.title.empty()) {
-      area->setTooltip(task.title);
-    } else {
-      area->clearTooltip();
-    }
+    // Installed even for a currently empty title: a title arriving later must surface without a
+    // rebuild. Empty content measures to nothing, so the popup never shows.
+    area->setTooltipProvider([this, taskRef]() -> TooltipContent {
+      const TaskModel* current = resolveTask(m_tasks, taskRef, m_taskGeneration);
+      return current != nullptr && !current->title.empty() ? TooltipContent{current->title}
+                                                           : TooltipContent{std::monostate{}};
+    });
+    m_taskTileAreas.push_back(area.get());
     attachHover(*area, tileWidthWithTitle, tileSize);
     return area;
   };
@@ -1108,10 +1132,12 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
               .height = m_vertical ? mainExtent : tileSize,
           }
       );
+      ColorSpec activeDotFill = m_activeIndicatorColor;
+      activeDotFill.alpha = 0.95f;
       for (const TaskModel* task : visibleDots) {
         const bool highlight = task != nullptr && task->active && m_showActiveIndicator;
-        const ColorSpec fill = highlight ? colorSpecFromRole(ColorRole::Primary, 0.95f)
-                                         : colorSpecFromRole(ColorRole::OnSurface, anyActive ? 0.55f : 0.35f);
+        const ColorSpec fill =
+            highlight ? activeDotFill : colorSpecFromRole(ColorRole::OnSurface, anyActive ? 0.55f : 0.35f);
         content->addChild(
             ui::box({
                 .fill = fill,
@@ -1158,14 +1184,14 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
       });
 
       std::vector<const TaskModel*> renderedTasks = tasks;
-      std::unordered_map<std::uintptr_t, std::vector<TaskModel>> cycleCandidatesByHandle;
+      std::unordered_map<std::uintptr_t, std::vector<TaskRef>> cycleCandidatesByHandle;
       std::unordered_map<std::uintptr_t, std::string> cycleKeyByHandle;
       std::unordered_map<std::uintptr_t, std::size_t> badgeCountByHandle;
       if (m_workspaceGroupContent == WorkspaceGroupContent::Icons && m_groupSingleIconPerApp && !tasks.empty()) {
         struct GroupedTaskItem {
           const TaskModel* representative = nullptr;
           std::string cycleKey;
-          std::vector<TaskModel> candidates;
+          std::vector<TaskRef> candidates;
         };
         std::vector<GroupedTaskItem> groupedItems;
         std::unordered_map<std::string, std::size_t> groupedIndexByKey;
@@ -1186,12 +1212,12 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
                 GroupedTaskItem{
                     .representative = task,
                     .cycleKey = groupedKey,
-                    .candidates = {*task},
+                    .candidates = {taskRefFor(*task)},
                 }
             );
           } else {
             auto& grouped = groupedItems[it->second];
-            grouped.candidates.push_back(*task);
+            grouped.candidates.push_back(taskRefFor(*task));
             if (!grouped.representative->active && task->active) {
               grouped.representative = task;
             }
@@ -1309,7 +1335,7 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
           const std::size_t badgeCount =
               badgeCountByHandle.contains(task->handleKey) ? badgeCountByHandle[task->handleKey] : 1;
           group->addChild(createTaskTile(
-              *task, cycleIt != cycleCandidatesByHandle.end() ? cycleIt->second : std::vector<TaskModel>{},
+              taskRefFor(*task), cycleIt != cycleCandidatesByHandle.end() ? cycleIt->second : std::vector<TaskRef>{},
               cycleKeyIt != cycleKeyByHandle.end() ? cycleKeyIt->second : std::string{}, badgeCount
           ));
         }
@@ -1342,12 +1368,13 @@ void TaskbarWidget::buildTaskButtons(Renderer& renderer) {
   m_taskStrip->setPadding(0.0f, 0.0f, 0.0f, 0.0f);
   m_taskStrip->setGap(tileGap);
   std::unordered_set<std::string> pinnedCycleKeysThisFrame;
-  for (const auto& task : m_tasks) {
+  for (std::size_t i = 0; i < m_tasks.size(); ++i) {
+    const auto& task = m_tasks[i];
     if (task.pinned && task.running && task.instanceCount > 1) {
       pinnedCycleKeysThisFrame.insert(!task.desktopEntryId.empty() ? task.desktopEntryId : task.idLower);
     }
     const std::size_t badgeCount = task.pinned ? std::max<std::size_t>(1, task.instanceCount) : 1;
-    m_taskStrip->addChild(createTaskTile(task, {}, {}, badgeCount));
+    m_taskStrip->addChild(createTaskTile(TaskRef{.index = i, .generation = m_taskGeneration}, {}, {}, badgeCount));
   }
   std::erase_if(m_groupedAppCycleCursor, [&](const auto& item) {
     return !pinnedCycleKeysThisFrame.contains(item.first);
@@ -2411,11 +2438,20 @@ void TaskbarWidget::updateModels() {
     applyPinnedMerge(nextTasks);
   }
 
-  if (modelsEqual(nextTasks, nextWorkspaces)) {
+  const ModelComparison comparison = compareModels(m_showWindowTitle, m_tasks, m_workspaces, nextTasks, nextWorkspaces);
+  if (comparison.layoutEqual) {
     m_tasks = std::move(nextTasks);
     m_workspaces = std::move(nextWorkspaces);
+    if (comparison.titlesChanged) {
+      for (InputArea* area : m_taskTileAreas) {
+        if (area != nullptr) {
+          area->requestTooltipRefresh();
+        }
+      }
+    }
     return;
   }
+  ++m_taskGeneration;
   m_tasks = std::move(nextTasks);
   m_workspaces = std::move(nextWorkspaces);
   m_rebuildPending = true;
@@ -2762,43 +2798,49 @@ std::string TaskbarWidget::workspaceLabel(const Workspace& workspace, std::size_
   return std::to_string(index + 1);
 }
 
-bool TaskbarWidget::modelsEqual(
-    const std::vector<TaskModel>& tasks, const std::vector<WorkspaceModel>& workspaces
-) const {
-  if (tasks.size() != m_tasks.size() || workspaces.size() != m_workspaces.size()) {
-    return false;
+TaskbarWidget::ModelComparison TaskbarWidget::compareModels(
+    bool showWindowTitle, const std::vector<TaskModel>& previousTasks,
+    const std::vector<WorkspaceModel>& previousWorkspaces, const std::vector<TaskModel>& nextTasks,
+    const std::vector<WorkspaceModel>& nextWorkspaces
+) {
+  if (nextTasks.size() != previousTasks.size() || nextWorkspaces.size() != previousWorkspaces.size()) {
+    return {};
   }
-  for (std::size_t i = 0; i < tasks.size(); ++i) {
-    if (tasks[i].appId != m_tasks[i].appId
-        || tasks[i].iconPath != m_tasks[i].iconPath
-        || tasks[i].active != m_tasks[i].active
-        || tasks[i].firstHandle != m_tasks[i].firstHandle
-        || tasks[i].workspaceKey != m_tasks[i].workspaceKey
-        || tasks[i].order != m_tasks[i].order
-        || tasks[i].workspaceOrder != m_tasks[i].workspaceOrder
-        || tasks[i].title != m_tasks[i].title
-        || tasks[i].pinned != m_tasks[i].pinned
-        || tasks[i].running != m_tasks[i].running
-        || tasks[i].instanceCount != m_tasks[i].instanceCount
-        || tasks[i].desktopEntryId != m_tasks[i].desktopEntryId) {
-      return false;
+  bool titlesChanged = false;
+  for (std::size_t i = 0; i < nextTasks.size(); ++i) {
+    const bool titleChanged = nextTasks[i].title != previousTasks[i].title;
+    titlesChanged = titlesChanged || titleChanged;
+    if (nextTasks[i].appId != previousTasks[i].appId
+        || nextTasks[i].iconPath != previousTasks[i].iconPath
+        || nextTasks[i].active != previousTasks[i].active
+        || nextTasks[i].firstHandle != previousTasks[i].firstHandle
+        || nextTasks[i].workspaceKey != previousTasks[i].workspaceKey
+        || nextTasks[i].order != previousTasks[i].order
+        || nextTasks[i].workspaceOrder != previousTasks[i].workspaceOrder
+        || nextTasks[i].handleKey != previousTasks[i].handleKey
+        || (showWindowTitle && titleChanged)
+        || nextTasks[i].pinned != previousTasks[i].pinned
+        || nextTasks[i].running != previousTasks[i].running
+        || nextTasks[i].instanceCount != previousTasks[i].instanceCount
+        || nextTasks[i].desktopEntryId != previousTasks[i].desktopEntryId) {
+      return {};
     }
   }
-  for (std::size_t i = 0; i < workspaces.size(); ++i) {
-    const auto& a = workspaces[i].workspace;
-    const auto& b = m_workspaces[i].workspace;
+  for (std::size_t i = 0; i < nextWorkspaces.size(); ++i) {
+    const auto& a = nextWorkspaces[i].workspace;
+    const auto& b = previousWorkspaces[i].workspace;
     if (a.id != b.id
         || a.name != b.name
         || a.active != b.active
         || a.urgent != b.urgent
         || a.occupied != b.occupied
-        || workspaces[i].key != m_workspaces[i].key
-        || workspaces[i].label != m_workspaces[i].label
-        || workspaces[i].hostOutput != m_workspaces[i].hostOutput) {
-      return false;
+        || nextWorkspaces[i].key != previousWorkspaces[i].key
+        || nextWorkspaces[i].label != previousWorkspaces[i].label
+        || nextWorkspaces[i].hostOutput != previousWorkspaces[i].hostOutput) {
+      return {};
     }
   }
-  return true;
+  return {.layoutEqual = true, .titlesChanged = titlesChanged};
 }
 
 void TaskbarWidget::buildDesktopIconIndex() {

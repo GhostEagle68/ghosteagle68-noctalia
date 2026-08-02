@@ -326,11 +326,15 @@ void Application::initLockScreenAndSession() {
         m_idleGraceOverlay.hide();
         m_lockscreenWidgetsController.onLockStateChanged();
         m_hookManager.fire(HookKind::SessionLocked);
+        releaseSleepDelayInhibitIfPending();
       },
       [this]() {
         m_idleGraceOverlay.hide();
         m_lockscreenWidgetsController.onLockStateChanged();
         m_hookManager.fire(HookKind::SessionUnlocked);
+        // Lock aborted before engage (e.g. compositor finished the lock object) — still release
+        // so PrepareForSleep is not stuck on the delay inhibit.
+        releaseSleepDelayInhibitIfPending();
         requestAllSurfacesRedraw();
         if (m_logindService != nullptr) {
           m_logindService->syncSessionUnlocked();
@@ -364,6 +368,8 @@ void Application::initLockScreenAndSession() {
   sessionActionHooks.onLogout = [this]() { return m_hookManager.fireBlocking(HookKind::LoggingOut); };
   sessionActionHooks.onReboot = [this]() { return m_hookManager.fireBlocking(HookKind::Rebooting); };
   sessionActionHooks.onShutdown = [this]() { return m_hookManager.fireBlocking(HookKind::ShuttingDown); };
+  sessionActionHooks.onBeforePlainSuspend = [this]() { m_skipLockOnNextSleep = true; };
+  sessionActionHooks.onPlainSuspendAborted = [this]() { m_skipLockOnNextSleep = false; };
   m_sessionActionRunner.setHooks(std::move(sessionActionHooks));
   m_sessionActionRunner.setPowerConfig(m_configService.config().shell.session.power);
   m_configService.addReloadCallback(
@@ -507,7 +513,10 @@ void Application::initPanelManagerAndPanels() {
     m_panelManager.openPanel("wallpaper", PanelOpenRequest{.output = output});
   });
   m_settingsWindow.setCalendarService(&m_calendarService);
-  m_calendarService.setCredentialChangeCallback([this]() { m_settingsWindow.onExternalOptionsChanged(); });
+  m_calendarService.setCredentialChangeCallback([this]() {
+    m_settingsWindow.onExternalOptionsChanged();
+    retrySecretServiceConsumers();
+  });
   m_settingsWindow.setClipboardService(&m_clipboardService);
   m_clipboardService.setPersistenceChangeCallback([this]() { m_settingsWindow.onExternalOptionsChanged(); });
   m_settingsWindow.setResetEncryptedStorage([this]() {

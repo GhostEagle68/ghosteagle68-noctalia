@@ -117,7 +117,18 @@
         "error": "Error del Clima",
         "loading": "Clima...",
         "no-location": "Sin ubicación",
-        "off": "Clima apagado"
+        "off": "Clima apagado",
+        "tooltip": {
+          "condition": "Condición",
+          "high": "Alto",
+          "humidity": "Humedad",
+          "low": "Bajo",
+          "sunrise": "Amanecer",
+          "sunset": "Atardecer",
+          "temperature": "Temperatura",
+          "uv": "Indice UV",
+          "wind": "Viento"
+        }
       }
     }
   },
@@ -255,6 +266,7 @@
       "start-playback": "Comienza reproducción en una aplicación MPRIS"
     },
     "network": {
+      "available": "Disponible",
       "connect": "Conectar",
       "current-connection": "Conexión actual",
       "external-ip": "WAN {ip}",
@@ -263,6 +275,7 @@
       "password": "Contraseña",
       "password-prompt": "Introduzca contraseña",
       "password-prompt-for": "Introduzca contraseña para {ssid}",
+      "saved": "Guardadas",
       "unavailable-detail": "Instala y habilita tu servicio de red para gestionar redes desde allí",
       "unavailable-title": "Servicio de Red no disponible",
       "vpns": "VPNs",
@@ -516,7 +529,12 @@
         "show-keyboard-layout": "Distribución de teclado",
         "show-label": "Mostrar Etiqueta",
         "show-login-button": "Botón de login",
+        "show-media": "Media",
+        "show-password-hint": "Sugerencia de contraseña",
+        "show-session-buttons": "Botones de sesion",
+        "show-unlock-hint": "Sugerencia desbloqueo",
         "show-vpn-label": "Mostrar etiqueta VPN",
+        "show-weather": "Tiempo",
         "show-when-idle": "Mostrar cuando este inactivo",
         "stat": "Estadistica",
         "stat-cpu-temp": "Temp. de CPU",
@@ -856,6 +874,7 @@
       "calendars-label": "Calendarios",
       "color-label": "Color",
       "credential-source-file": "Archivo de contraseña",
+      "credential-source-keyring": "Almacen de claves",
       "credential-source-label": "Almacen de credenciales",
       "delete-error": "No se pudo eliminar la cuenta de calendario.",
       "edit-title": "Modificar Cuenta de Calendario",
@@ -950,6 +969,8 @@
           "border": "Borde",
           "border-description": "Rol de color del contorno de la cápsula; deja en Predeterminado para no tener contorno",
           "clear": "Eliminar",
+          "deselect": "Deseleccionar",
+          "drag": "Reordenar",
           "drawer-detached": "Panel Desacoplado",
           "drawer-glyph-closed": "Icono cuando Cerrado",
           "drawer-glyph-opened": "Icono cuando Abierto",
@@ -969,12 +990,18 @@
           "padding-description": "Relleno interior entre el borde de la cápsula y sus widgets, en píxeles",
           "radius": "Radio",
           "radius-description": "Radio de esquina de la cápsula en píxeles; Auto hereda el radio de cápsula de la barra",
+          "remove-from-group": "Eliminar del grupo",
+          "remove-orphan": "Eliminar grupo desconocido",
+          "remove-widget": "Eliminar de la barra",
+          "select": "Seleccionar para agrupar",
           "selected": "{count} seleccionados",
+          "settings-widget": "Ajustes de widget",
           "show": "Mostrar este grupo",
           "show-widget": "Mostrar este widget",
           "style": "Estilo",
           "title": "Grupo de cápsulas",
-          "ungroup": "Desagrupar"
+          "ungroup": "Desagrupar",
+          "widget-spacing": "Separacion"
         },
         "inspector": {
           "add-instance-title": "Añadir nuevo widget con nombre {widget} a {lane}",
@@ -1013,11 +1040,13 @@
         "settings": {
           "empty": "Ninguna configuración coincide con los filtros actuales.",
           "groups": {
+            "actions": "Acciones",
             "grouping": "Agrupación",
             "presentation": "Presentación",
             "runtime": "Runtime",
             "taskbar": {
               "grouping": "Agrupado",
+              "windows": "Ventana",
               "workspace-labels": "Etiquetas Espacios de Trabajo"
             },
             "widget": "Widget",
@@ -1123,6 +1152,7 @@
         "general": "General",
         "greeter": "Greeter",
         "grouping": "Agrupación",
+        "history": "Historial",
         "home": "Inicio",
         "hot-corners": "Esquinas activas",
         "idle": "Inactivo",
@@ -1397,6 +1427,7 @@
         "delete-confirm-title": "¿Borrar \"{name}\"?",
         "deprecated": "obsoleto",
         "empty": "No hay plugins activados.",
+        "held-back": "version antigua",
         "incompatible-plugin-api": "API de plugin incompatible",
         "loading": "Cargando plugins...",
         "refreshing": "Actualizando plugins...",
@@ -1443,6 +1474,7 @@
         "categories": "Categorías",
         "category-all": "Todo",
         "empty": "No se encontraron plugins",
+        "held-back": "Version antigua",
         "incompatible": "Incompatible",
         "loading": "Cargando catálogo...",
         "no-readme": "No hay descripción disponible.",
@@ -3345,10 +3377,6 @@
           "description": "Mostrar texto de marcador de posición cuando no haya ninguna ventana enfocada en lugar de ocultar el widget",
           "label": "Mostrar etiqueta vacía"
         },
-        "show-icon": {
-          "description": "Mostrar el icono de este widget",
-          "label": "Mostrar icono"
-        },
         "show-label": {
           "description": "Mostrar texto junto al icono",
           "label": "Mostrar etiqueta"
@@ -3623,7 +3651,7 @@
       "all-monitors": "TODO",
       "color-title": "Color del fondo de pantalla",
       "filter-placeholder": "Filtrar...",
-      "flatten": "Aplanar",
+      "flatten": "Subcarpetas",
       "loading": "Cargando fondos de pantalla...",
       "sort-date-asc": "Ordenar por fecha (más antiguo primero)",
       "sort-date-desc": "Ordenar por fecha (más nuevo primero)",
