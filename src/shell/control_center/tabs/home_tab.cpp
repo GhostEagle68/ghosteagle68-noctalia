@@ -653,18 +653,15 @@ std::unique_ptr<Flex> HomeTab::createHeaderActions() {
           .glyph = "settings",
           .onClick = []() { PanelManager::instance().openSettingsWindow(); },
           .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
+      }),
+      ui::button({
+          .out = &m_sessionButton,
+          .glyph = "shutdown",
+          .onClick = []() { PanelManager::instance().togglePanel("session"); },
+          .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
       })
   );
-  if (m_config == nullptr || m_config->config().controlCenter.showSessionButton) {
-    row->addChild(
-        ui::button({
-            .out = &m_sessionButton,
-            .glyph = "shutdown",
-            .onClick = []() { PanelManager::instance().togglePanel("session"); },
-            .configure = [scale](Button& button) { panel_button_style::configureHeaderIconButton(button, scale); },
-        })
-    );
-  }
+  syncHeaderActions();
   return row;
 }
 
@@ -1182,7 +1179,14 @@ void HomeTab::cancelCrispFade() {
   m_wallpaperCrispAnimId = 0;
 }
 
+void HomeTab::syncHeaderActions() {
+  if (m_sessionButton != nullptr) {
+    m_sessionButton->setVisible(m_config == nullptr || m_config->config().controlCenter.showSessionButton);
+  }
+}
+
 void HomeTab::doUpdate(Renderer& renderer) {
+  syncHeaderActions();
   if (!m_active) {
     m_progressTimer.stop();
     return;

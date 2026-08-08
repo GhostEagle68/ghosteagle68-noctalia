@@ -1181,6 +1181,7 @@
         "monitor-thresholds": "Highlight Thresholds",
         "monitors": "Monitors",
         "motion": "Motion",
+        "navigation": "Navigation",
         "network": "Network",
         "night-light": "Night Light",
         "notifications": "Notifications",
@@ -2255,8 +2256,8 @@
           "label": "Home Shortcuts"
         },
         "home-session-button": {
-          "description": "Show a button for session actions (lock, suspend, reboot, shutdown, logout)",
-          "label": "Show Session Button"
+          "description": "Show the session-actions button in the Home tab header",
+          "label": "Show Header Session Button"
         },
         "home-shortcuts-show-labels": {
           "description": "Display text labels under shortcut icons in the home tab",
