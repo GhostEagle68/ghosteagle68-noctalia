@@ -186,7 +186,7 @@
       "choose-codec": "Choose a codec",
       "choose-effects-profile": "Choose a profile",
       "codec": "Codec",
-      "codec-tooltip": "Codec used for this Bluetooth device. Higher-quality codecs may use more bandwidth and battery.",
+      "codec-tooltip": "Select codec to use for this Bluetooth device. Higher-quality codecs may use more bandwidth and battery.",
       "effects-profile": "Effects",
       "input-device-prefix": "Input",
       "no-application-audio": "No application audio",
