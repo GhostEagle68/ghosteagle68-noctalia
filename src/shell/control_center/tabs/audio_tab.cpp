@@ -1713,6 +1713,7 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
                     .text = i18n::tr("control-center.audio.codec") + ":",
                     .fontSize = Style::fontSizeCaption * scale,
                     .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+                    .configure = [](Label& label) { label.setTooltip(i18n::tr("control-center.audio.codec-tooltip")); },
                 }),
                 ui::select({
                     .out = &card.state.codecSelect,
