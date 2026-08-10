@@ -22,9 +22,9 @@
 #include <pipewire/pipewire.h>
 #include <ranges>
 #include <spa/param/param.h>
+#include <spa/param/profile.h>
 #include <spa/param/props.h>
 #include <spa/param/route.h>
-#include <spa/param/profile.h>
 #include <spa/pod/builder.h>
 #include <spa/pod/iter.h>
 #include <spa/pod/parser.h>
@@ -529,7 +529,7 @@ namespace {
   // "a2dp-sink-ldac", "headset-head-unit" — map the common ones to a short display label,
   // falling back to PipeWire's own description so an unrecognized profile never disappears.
   [[nodiscard]] std::string codecShortLabel(const std::string& name, const std::string& description) {
-    auto contains = [&name](std::string_view needle) {return name.find(needle) != std::string::npos; };
+    auto contains = [&name](std::string_view needle) { return name.find(needle) != std::string::npos; };
     if (contains("ldac")) {
       return "LDAC";
     }
@@ -561,8 +561,6 @@ namespace {
       return "Handsfree (HFP)";
     }
     return !description.empty() ? description : name;
-
-
   }
   constexpr Logger kLog("pipewire");
 
@@ -1433,9 +1431,9 @@ void PipeWireService::onDeviceInfo(std::uint32_t id, const pw_device_info* info)
     for (std::uint32_t i = 0; i < info->n_params; ++i) {
       if (info->params[i].id == SPA_PARAM_Route) {
         pw_device_enum_params(it->second.proxy, 0, SPA_PARAM_Route, 0, UINT32_MAX, nullptr);
-     } else if (info->params[i].id == SPA_PARAM_EnumProfile) {
+      } else if (info->params[i].id == SPA_PARAM_EnumProfile) {
         pw_device_enum_params(it->second.proxy, 0, SPA_PARAM_EnumProfile, 0, UINT32_MAX, nullptr);
-     } else if (info->params[i].id == SPA_PARAM_Profile) {
+      } else if (info->params[i].id == SPA_PARAM_Profile) {
         pw_device_enum_params(it->second.proxy, 0, SPA_PARAM_Profile, 0, UINT32_MAX, nullptr);
       }
     }

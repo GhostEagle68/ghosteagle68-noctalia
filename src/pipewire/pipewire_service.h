@@ -43,7 +43,8 @@ struct AudioNode {
   bool isDefault = false;
   bool available = true; // false for a device whose active route is unavailable (e.g. unplugged HDMI)
 
-  std::uint32_t deviceId = 0; // Bluetooth codec/profile options for this device (e.g. AAC/SBC/LDAC), empty for non-Bluetooth devices or Bluetooth devices with only one usable profile.
+  std::uint32_t deviceId = 0; // Bluetooth codec/profile options for this device (e.g. AAC/SBC/LDAC), empty for
+                              // non-Bluetooth devices or Bluetooth devices with only one usable profile.
   std::vector<AudioCodecOption> codecOptions;
   std::size_t activeCodecIndex = static_cast<std::size_t>(-1);
 
@@ -122,7 +123,7 @@ public:
   void setSourceMuted(std::uint32_t id, bool muted);
   void setDefaultSource(std::uint32_t id);
   // Applies a PipeWire device profile by index (the mechanism Bluetooth codec choice is exposed
-  // through — see AudioNode::codecOptions). No-op if the device is no longer known. 
+  // through — see AudioNode::codecOptions). No-op if the device is no longer known.
   void setDeviceProfile(std::uint32_t deviceId, std::int32_t profileIndex);
 
   // Convenience (operates on default sink/source)
