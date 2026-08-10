@@ -1702,33 +1702,33 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
           })
       ),
       ui::row(
-                {
-                    .out = &card.state.codecRow,
-                    .align = FlexAlign::Center,
-                    .gap = Style::spaceSm * scale,
-                    .visible = false,
-                    .participatesInLayout = false,
-                },
-                ui::label({
-                    .text = i18n::tr("control-center.audio.codec") + ":",
-                    .fontSize = Style::fontSizeCaption * scale,
-                    .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
-                    .configure = [](Label& label) { label.setTooltip(i18n::tr("control-center.audio.codec-tooltip")); },
-                }),
-                ui::select({
-                    .out = &card.state.codecSelect,
-                    .placeholder = i18n::tr("control-center.audio.choose-codec"),
-                    .fontSize = Style::fontSizeCaption * scale,
-                    .controlHeight = Style::controlHeightSm * scale,
-                    .horizontalPadding = Style::spaceSm * scale,
-                    .glyphSize = Style::fontSizeBody * scale,
-                    .notifyOnReselect = true,
-                    .enabled = false,
-                    .surfaceOpacity = panelCardOpacity(),
-                    .height = Style::controlHeightSm * scale,
-                    .flexGrow = 1.0F,
-                })
-            )
+          {
+              .out = &card.state.codecRow,
+              .align = FlexAlign::Center,
+              .gap = Style::spaceSm * scale,
+              .visible = false,
+              .participatesInLayout = false,
+          },
+          ui::label({
+              .text = i18n::tr("control-center.audio.codec") + ":",
+              .fontSize = Style::fontSizeCaption * scale,
+              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+              .configure = [](Label& label) { label.setTooltip(i18n::tr("control-center.audio.codec-tooltip")); },
+          }),
+          ui::select({
+              .out = &card.state.codecSelect,
+              .placeholder = i18n::tr("control-center.audio.choose-codec"),
+              .fontSize = Style::fontSizeCaption * scale,
+              .controlHeight = Style::controlHeightSm * scale,
+              .horizontalPadding = Style::spaceSm * scale,
+              .glyphSize = Style::fontSizeBody * scale,
+              .notifyOnReselect = true,
+              .enabled = false,
+              .surfaceOpacity = panelCardOpacity(),
+              .height = Style::controlHeightSm * scale,
+              .flexGrow = 1.0F,
+          })
+      )
   );
 }
 
