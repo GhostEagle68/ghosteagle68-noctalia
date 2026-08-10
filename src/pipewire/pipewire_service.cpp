@@ -529,7 +529,7 @@ namespace {
   // "a2dp-sink-ldac", "headset-head-unit" — map the common ones to a short display label,
   // falling back to PipeWire's own description so an unrecognized profile never disappears.
   [[nodiscard]] std::string codecShortLabel(const std::string& name, const std::string& description) {
-    auto contains = [&name](std::string_view needle) { return name.find(needle) != std::string::npos; };
+    auto contains = [&name](const std::string_view needle) { return name.contains(needle); };
     if (contains("ldac")) {
       return "LDAC";
     }
