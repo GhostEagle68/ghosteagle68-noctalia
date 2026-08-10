@@ -2023,6 +2023,26 @@ void PipeWireService::setSourceVolume(std::uint32_t id, float volume) {
 }
 void PipeWireService::setSourceMuted(std::uint32_t id, bool muted) { setNodeMuted(id, muted); }
 void PipeWireService::setDefaultSource(std::uint32_t id) { setDefaultNode(id, "default.audio.source"); }
+void PipeWireService::setDeviceProfile(std::uint32_t deviceId, std::int32_t profileIndex) {
+  const auto it = m_devices.find(deviceId);
+  if (it == m_devices.end() || it->second.proxy == nullptr) {
+    return;
+  }
+
+  std::uint8_t buffer[256];
+  spa_pod_builder builder;
+  spa_pod_builder_init(&builder, buffer, sizeof(buffer));
+
+  spa_pod_frame frame;
+  spa_pod_builder_push_object(&builder, &frame, SPA_TYPE_OBJECT_ParamProfile, SPA_PARAM_Profile);
+  spa_pod_builder_prop(&builder, SPA_PARAM_PROFILE_index, 0);
+  spa_pod_builder_int(&builder, profileIndex);
+  spa_pod_builder_prop(&builder, SPA_PARAM_PROFILE_save, 0);
+  spa_pod_builder_bool(&builder, true);
+  auto* pod = static_cast<spa_pod*>(spa_pod_builder_pop(&builder, &frame));
+
+  pw_device_set_param(it->second.proxy, SPA_PARAM_Profile, 0, pod);
+}
 
 void PipeWireService::setProgramOutputVolume(std::uint32_t id, float volume) { setNodeVolume(id, volume); }
 void PipeWireService::setProgramOutputMuted(std::uint32_t id, bool muted) { setNodeMuted(id, muted); }
