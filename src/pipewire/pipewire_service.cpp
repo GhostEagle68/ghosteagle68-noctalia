@@ -525,42 +525,115 @@ namespace {
     }
     return 0;
   }
-  // Bluetooth (bluez5) profile "name" values encode the codec, e.g. "a2dp-sink-aac",
-  // "a2dp-sink-ldac", "headset-head-unit" — map the common ones to a short display label,
-  // falling back to PipeWire's own description so an unrecognized profile never disappears.
-  [[nodiscard]] std::string codecShortLabel(const std::string& name, const std::string& description) {
-    auto contains = [&name](const std::string_view needle) { return name.contains(needle); };
-    if (contains("ldac")) {
-      return "LDAC";
-    }
-    if (contains("aptx_hd") || contains("aptx-hd")) {
-      return "aptX HD";
-    }
-    if (contains("aptx_ll") || contains("aptx-ll")) {
-      return "aptX LL";
-    }
-    if (contains("aptx")) {
-      return "aptX";
-    }
-    if (contains("aac")) {
-      return "AAC";
-    }
-    if (contains("sbc_xq") || contains("sbc-xq")) {
+  // A bluez5 profile name encodes the codec ("a2dp-sink-sbc_xq", "headset-head-unit-msbc").
+  // Reducing each profile to a stable key collapses duplicates — a headset lists CVSD/mSBC/LC3-SWB
+  // variants that are all one choice to the user — and avoids substring traps such as "msbc"
+  // matching the A2DP "sbc" codec.
+  struct CodecChoice {
+    std::string key; // empty when the profile is not a codec choice, e.g. "off"
+    std::string label;
+  };
+
+  [[nodiscard]] std::string codecDisplayName(std::string_view token) {
+    if (token == "sbc_xq") {
       return "SBC-XQ";
     }
-    if (contains("sbc")) {
-      return "SBC";
+    if (token == "aptx_hd") {
+      return "aptX HD";
     }
-    if (contains("opus")) {
+    if (token == "aptx_ll") {
+      return "aptX LL";
+    }
+    if (token == "aptx") {
+      return "aptX";
+    }
+    if (token == "opus") {
       return "Opus";
     }
-    if (contains("lc3")) {
-      return "LC3";
+    std::string display(token);
+    std::ranges::transform(display, display.begin(), [](unsigned char ch) { return std::toupper(ch); });
+    return display;
+  }
+
+  [[nodiscard]] CodecChoice codecChoiceForProfile(const std::string& name, const std::string& description) {
+    // Every headset variant is one choice: the mode that enables the microphone.
+    if (name.starts_with("headset-") || name.contains("head-unit") || name.contains("handsfree")) {
+      return {.key = "hfp", .label = "HFP"};
     }
-    if (contains("head-unit") || contains("headset") || contains("handsfree")) {
-      return "Handsfree (HFP)";
+    if (name.starts_with("a2dp-sink-")) {
+      const std::string token = name.substr(std::string_view("a2dp-sink-").size());
+      return {.key = token, .label = codecDisplayName(token)};
     }
-    return !description.empty() ? description : name;
+    // The unsuffixed A2DP profile is the device's preferred codec; PipeWire names that codec only
+    // in the description ("... codec AAC").
+    if (name == "a2dp-sink") {
+      const auto pos = description.find("codec ");
+      if (pos == std::string::npos) {
+        return {.key = "a2dp", .label = "A2DP"};
+      }
+      std::string display = description.substr(pos + std::string_view("codec ").size());
+      if (const auto end = display.find(')'); end != std::string::npos) {
+        display.erase(end);
+      }
+      std::string key = display;
+      std::ranges::transform(key, key.begin(), [](unsigned char ch) { return std::tolower(ch); });
+      std::ranges::replace(key, '-', '_');
+      return {.key = std::move(key), .label = std::move(display)};
+    }
+    return {};
+  }
+
+  // One entry per distinct codec choice, keeping the highest-priority profile for each: the
+  // unsuffixed profiles carry the device's best codec and outrank their explicit variants.
+  void collectCodecOptions(const PipeWireService::DeviceData& device, AudioNode& node) {
+    struct Candidate {
+      std::string key;
+      std::string label;
+      std::int32_t index = -1;
+      std::int32_t priority = 0;
+    };
+
+    std::vector<Candidate> candidates;
+    for (const auto& profile : device.profiles) {
+      if (profile.available == SPA_PARAM_AVAILABILITY_no) {
+        continue;
+      }
+      CodecChoice choice = codecChoiceForProfile(profile.name, profile.description);
+      if (choice.key.empty()) {
+        continue;
+      }
+      const auto existing = std::ranges::find(candidates, choice.key, &Candidate::key);
+      if (existing == candidates.end()) {
+        candidates.push_back({std::move(choice.key), std::move(choice.label), profile.index, profile.priority});
+      } else if (profile.priority > existing->priority) {
+        existing->label = std::move(choice.label);
+        existing->index = profile.index;
+        existing->priority = profile.priority;
+      }
+    }
+
+    if (candidates.size() < 2) {
+      return;
+    }
+
+    // Match the active profile by key, not index: it may be a variant folded into another entry
+    // (e.g. "headset-head-unit-cvsd" into "HFP"), and the selection must still show.
+    std::string activeKey;
+    const auto active =
+        std::ranges::find(device.profiles, device.activeProfileIndex, &PipeWireService::DeviceProfileData::index);
+    if (active != device.profiles.end()) {
+      activeKey = codecChoiceForProfile(active->name, active->description).key;
+    }
+
+    node.codecOptions.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+      node.codecOptions.push_back(AudioCodecOption{.profileIndex = candidate.index, .label = candidate.label});
+    }
+
+    const auto activeIt = std::ranges::find(candidates, activeKey, &Candidate::key);
+    node.activeCodecIndex = !activeKey.empty() && activeIt != candidates.end()
+        ? static_cast<std::size_t>(std::distance(candidates.begin(), activeIt))
+        : static_cast<std::size_t>(-1);
   }
   constexpr Logger kLog("pipewire");
 
@@ -1734,26 +1807,7 @@ void PipeWireService::rebuildState() {
 
     node.deviceId = nd->deviceId;
     if (nd->mediaClass == "Audio/Sink" && device != nullptr && device->isBluetooth) {
-      for (const auto& profile : device->profiles) {
-        if (profile.available == SPA_PARAM_AVAILABILITY_no || profile.name == "off") {
-          continue;
-        }
-        node.codecOptions.push_back(
-            AudioCodecOption{
-                .profileIndex = profile.index,
-                .label = codecShortLabel(profile.name, profile.description),
-            }
-        );
-      }
-      if (node.codecOptions.size() < 2) {
-        node.codecOptions.clear();
-      } else {
-        const auto activeIt =
-            std::ranges::find(node.codecOptions, device->activeProfileIndex, &AudioCodecOption::profileIndex);
-        node.activeCodecIndex = activeIt != node.codecOptions.end()
-            ? static_cast<std::size_t>(std::distance(node.codecOptions.begin(), activeIt))
-            : static_cast<std::size_t>(-1);
-      }
+      collectCodecOptions(*device, node);
     }
 
     if (nd->mediaClass == "Audio/Sink") {
