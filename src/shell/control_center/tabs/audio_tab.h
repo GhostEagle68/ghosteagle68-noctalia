@@ -52,6 +52,8 @@ private:
     Button* muteButton = nullptr;
     Flex* effectsProfileRow = nullptr;
     Select* effectsProfileSelect = nullptr;
+    Flex* codecRow = nullptr;
+    Select* codecSelect = nullptr;
     Timer volumeDebounceTimer;
     bool syncing = false;
   };
@@ -86,6 +88,7 @@ private:
 
   void openDeviceMenu(DeviceVolumeCardState& card, const DeviceMenuModel& menu);
   void syncEffectsProfileControls(Renderer& renderer);
+  void syncCodecControls(Renderer& renderer);
 
   PipeWireService* m_audio = nullptr;
   EasyEffectsService* m_easyEffects = nullptr;
@@ -107,6 +110,7 @@ private:
   Flex* m_programList = nullptr;
   std::vector<Flex*> m_programRows;
   std::string m_lastProgramListKey;
+  std::string m_lastCodecListKey;
   float m_lastProgramSliderMax = -1.0F;
   std::string m_lastEffectsProfileListKey;
   float m_syncedPercentLabelMinWidth = -1.0F;

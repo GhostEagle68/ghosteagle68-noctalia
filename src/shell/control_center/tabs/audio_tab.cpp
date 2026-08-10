@@ -1700,7 +1700,34 @@ std::unique_ptr<Flex> AudioTab::createDeviceVolumeCard(DeviceVolumeCardSpec card
               .height = Style::controlHeightSm * scale,
               .flexGrow = 1.0F,
           })
-      )
+      ),
+      ui::row(
+                {
+                    .out = &card.state.codecRow,
+                    .align = FlexAlign::Center,
+                    .gap = Style::spaceSm * scale,
+                    .visible = false,
+                    .participatesInLayout = false,
+                },
+                ui::label({
+                    .text = i18n::tr("control-center.audio.codec") + ":",
+                    .fontSize = Style::fontSizeCaption * scale,
+                    .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+                }),
+                ui::select({
+                    .out = &card.state.codecSelect,
+                    .placeholder = i18n::tr("control-center.audio.choose-codec"),
+                    .fontSize = Style::fontSizeCaption * scale,
+                    .controlHeight = Style::controlHeightSm * scale,
+                    .horizontalPadding = Style::spaceSm * scale,
+                    .glyphSize = Style::fontSizeBody * scale,
+                    .notifyOnReselect = true,
+                    .enabled = false,
+                    .surfaceOpacity = panelCardOpacity(),
+                    .height = Style::controlHeightSm * scale,
+                    .flexGrow = 1.0F,
+                })
+            )
   );
 }
 
@@ -1833,6 +1860,7 @@ void AudioTab::doUpdate(Renderer& renderer) {
   rebuildProgramVolumes(renderer);
   syncValueLabelWidths(renderer);
   syncEffectsProfileControls(renderer);
+  syncCodecControls(renderer);
 
   if (m_audio != nullptr) {
     const AudioState& state = m_audio->state();
@@ -1954,6 +1982,7 @@ void AudioTab::onClose() {
   m_outputDeviceVolume = {};
   m_inputDeviceVolume = {};
   m_lastEffectsProfileListKey.clear();
+  m_lastCodecListKey.clear();
   m_lastOutputWidth = -1.0F;
   m_lastInputWidth = -1.0F;
   m_lastOutputListKey.clear();
@@ -2060,6 +2089,65 @@ void AudioTab::syncEffectsProfileControls(Renderer& /*renderer*/) {
       inputProfiles, activeInput, m_inputDeviceVolume.effectsProfileRow, m_inputDeviceVolume.effectsProfileSelect,
       AudioEffectsProfileKind::Input
   );
+}
+void AudioTab::syncCodecControls(Renderer& /*renderer*/) {
+  const AudioNode* sink = m_audio != nullptr ? m_audio->defaultSink() : nullptr;
+  static const std::vector<AudioCodecOption> kNoOptions;
+  const std::vector<AudioCodecOption>& options = sink != nullptr ? sink->codecOptions : kNoOptions;
+  const std::uint32_t deviceId = sink != nullptr ? sink->deviceId : 0;
+  const std::size_t activeIndex = sink != nullptr ? sink->activeCodecIndex : static_cast<std::size_t>(-1);
+
+  std::string key = std::to_string(deviceId);
+  key.push_back('\n');
+  key += std::to_string(activeIndex);
+  key.push_back('\n');
+  for (const auto& option : options) {
+    key += option.label;
+    key.push_back('\n');
+  }
+
+  if (key == m_lastCodecListKey) {
+    return;
+  }
+  m_lastCodecListKey = std::move(key);
+
+  Flex* row = m_outputDeviceVolume.codecRow;
+  Select* select = m_outputDeviceVolume.codecSelect;
+  if (row == nullptr || select == nullptr) {
+    return;
+  }
+
+  const bool hasOptions = options.size() >= 2;
+  row->setVisible(hasOptions);
+  row->setParticipatesInLayout(hasOptions);
+  select->setEnabled(hasOptions);
+  select->setOnSelectionChanged(nullptr);
+
+  if (!hasOptions) {
+    select->setOptions({});
+    select->clearSelection();
+    return;
+  }
+
+  std::vector<std::string> labels;
+  labels.reserve(options.size());
+  for (const auto& option : options) {
+    labels.push_back(option.label);
+  }
+  select->setOptions(labels);
+
+  if (activeIndex < options.size()) {
+    select->setSelectedIndex(activeIndex);
+  } else {
+    select->clearSelection();
+  }
+
+  select->setOnSelectionChanged([this, deviceId, options](std::size_t index, std::string_view /*label*/) {
+    if (m_audio == nullptr || index >= options.size()) {
+      return;
+    }
+    m_audio->setDeviceProfile(deviceId, options[index].profileIndex);
+  });
 }
 
 void AudioTab::rebuildProgramVolumes(Renderer& renderer) {

@@ -183,6 +183,8 @@
   "control-center": {
     "audio": {
       "application-volumes": "Application Volumes",
+      "choose-codec": "Choose a codec",
+      "codec": "Codec",
       "choose-effects-profile": "Choose a profile",
       "effects-profile": "Effects",
       "input-device-prefix": "Input",
