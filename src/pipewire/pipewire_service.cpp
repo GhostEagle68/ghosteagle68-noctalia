@@ -525,7 +525,45 @@ namespace {
     }
     return 0;
   }
+  // Bluetooth (bluez5) profile "name" values encode the codec, e.g. "a2dp-sink-aac",
+  // "a2dp-sink-ldac", "headset-head-unit" — map the common ones to a short display label,
+  // falling back to PipeWire's own description so an unrecognized profile never disappears.
+  [[nodiscard]] std::string codecShortLabel(const std::string& name, const std::string& description) {
+    auto contains = [&name](std::string_view needle) {return name.find(needle) != std::string::npos; };
+    if (contains("ldac")) {
+      return "LDAC";
+    }
+    if (contains("aptx_hd") || contains("aptx-hd")) {
+      return "aptX HD";
+    }
+    if (contains("aptx_ll") || contains("aptx-ll")) {
+      return "aptX LL";
+    }
+    if (contains("aptx")) {
+      return "aptX";
+    }
+    if (contains("aac")) {
+      return "AAC";
+    }
+    if (contains("sbc_xq") || contains("sbc-xq")) {
+      return "SBC-XQ";
+    }
+    if (contains("sbc")) {
+      return "SBC";
+    }
+    if (contains("opus")) {
+      return "Opus";
+    }
+    if (contains("lc3")) {
+      return "LC3";
+    }
+    if (contains("head-unit") || contains("headset") || contains("handsfree")) {
+      return "Handsfree (HFP)";
+    }
+    return !description.empty() ? description : name;
 
+
+  }
   constexpr Logger kLog("pipewire");
 
   constexpr auto kTrackedNodeClasses = std::to_array<std::string_view>({
@@ -1695,6 +1733,30 @@ void PipeWireService::rebuildState() {
     const bool hasDirRoutes = std::ranges::any_of(nd->routes, matchesDir)
         || (device != nullptr && std::ranges::any_of(device->routes, matchesDir));
     node.available = activeRoute != nullptr || !hasDirRoutes;
+
+    node.deviceId = nd->deviceId;
+    if (nd->mediaClass == "Audio/Sink" && device != nullptr && device->isBluetooth) {
+      for (const auto& profile : device->profiles) {
+        if (profile.available == SPA_PARAM_AVAILABILITY_no || profile.name == "off") {
+          continue;
+        }
+        node.codecOptions.push_back(
+            AudioCodecOption{
+                .profileIndex = profile.index,
+                .label = codecShortLabel(profile.name, profile.description),
+            }
+        );
+      }
+      if (node.codecOptions.size() < 2) {
+        node.codecOptions.clear();
+      } else {
+        const auto activeIt =
+            std::ranges::find(node.codecOptions, device->activeProfileIndex, &AudioCodecOption::profileIndex);
+        node.activeCodecIndex = activeIt != node.codecOptions.end()
+            ? static_cast<std::size_t>(std::distance(node.codecOptions.begin(), activeIt))
+            : static_cast<std::size_t>(-1);
+      }
+    }
 
     if (nd->mediaClass == "Audio/Sink") {
       node.isDefault = (nd->name == m_defaultSinkName);
