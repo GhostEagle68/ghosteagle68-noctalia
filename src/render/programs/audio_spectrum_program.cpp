@@ -220,12 +220,21 @@ void AudioSpectrumProgram::draw(
       const Color color0 = colorAt(style.color1, style.color2, t0);
       const Color color1 = colorAt(style.color1, style.color2, t1);
 
-      pushVertex(m_vertices, x0, topY0, color0);
-      pushVertex(m_vertices, x0, bottomY, color0);
-      pushVertex(m_vertices, x1, topY1, color1);
-      pushVertex(m_vertices, x0, bottomY, color0);
-      pushVertex(m_vertices, x1, bottomY, color1);
-      pushVertex(m_vertices, x1, topY1, color1);
+      if (horizontal) {
+        pushVertex(m_vertices, x0, topY0, color0);
+        pushVertex(m_vertices, x0, bottomY, color0);
+        pushVertex(m_vertices, x1, topY1, color1);
+        pushVertex(m_vertices, x0, bottomY, color0);
+        pushVertex(m_vertices, x1, bottomY, color1);
+        pushVertex(m_vertices, x1, topY1, color1);
+      } else {
+        pushVertex(m_vertices, topY0, x0, color0);
+        pushVertex(m_vertices, bottomY, x0, color0);
+        pushVertex(m_vertices, topY1, x1, color1);
+        pushVertex(m_vertices, bottomY, x0, color0);
+        pushVertex(m_vertices, bottomY, x1, color1);
+        pushVertex(m_vertices, topY1, x1, color1);
+      }
     }
   } else {
     for (int i = 0; i < barCount; ++i) {
