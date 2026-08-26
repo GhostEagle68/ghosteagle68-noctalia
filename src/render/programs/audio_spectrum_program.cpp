@@ -190,8 +190,11 @@ void AudioSpectrumProgram::draw(
       const float p3 = get(i + 2);
       const float t2 = frac * frac;
       const float t3 = t2 * frac;
-      return 0.5F * ((2.0F * p1) + (-p0 + p2) * frac + (2.0F * p0 - 5.0F * p1 + 4.0F * p2 - p3) * t2
-                      + (-p0 + 3.0F * p1 - 3.0F * p2 + p3) * t3);
+      return 0.5F
+          * ((2.0F * p1)
+             + (-p0 + p2) * frac
+             + (2.0F * p0 - 5.0F * p1 + 4.0F * p2 - p3) * t2
+             + (-p0 + 3.0F * p1 - 3.0F * p2 + p3) * t3);
     };
 
     const int totalSlices = barCount * kTessellation;
