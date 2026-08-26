@@ -160,47 +160,113 @@ void AudioSpectrumProgram::draw(
   m_vertices.clear();
   m_vertices.reserve(static_cast<std::size_t>(barCount) * 6U * 6U);
 
-  for (int i = 0; i < barCount; ++i) {
-    const int baseIndex = style.mirrored ? (i < valueCount ? valueCount - 1 - i : i - valueCount) : i;
-    const int valueIndex = style.reversed ? valueCount - 1 - baseIndex : baseIndex;
-    const float rawValue = valueIndex >= 0 && valueIndex < valueCount
-        ? std::clamp(values[static_cast<std::size_t>(valueIndex)], 0.0F, 1.0F)
-        : 0.0F;
-    float crossPixels = std::max(1.0F, std::floor(rawValue * crossAxisLen * crossPixelScale + 0.5F));
-    if (style.centered && crossPixels > 1.0F) {
-      crossPixels = std::max(2.0F, std::round(crossPixels * 0.5F) * 2.0F);
-    }
-    const float crossSize = crossPixels / crossPixelScale;
+  if (style.wave) {
+    constexpr int kTessellation = 4;
 
-    float mainStart = compactBars ? startOffset + static_cast<float>(i) * stride
-                                  : snapToPixel(startOffset + static_cast<float>(i) * stride, mainPixelScale);
-    float mainEnd = mainStart + barThickness;
-    if (mainStart < 0.0F) {
-      mainEnd -= mainStart;
-      mainStart = 0.0F;
+    std::vector<float> bandValues(static_cast<std::size_t>(barCount));
+    for (int i = 0; i < barCount; ++i) {
+      const int baseIndex = style.mirrored ? (i < valueCount ? valueCount - 1 - i : i - valueCount) : i;
+      const int valueIndex = style.reversed ? valueCount - 1 - baseIndex : baseIndex;
+      bandValues[static_cast<std::size_t>(i)] = valueIndex >= 0 && valueIndex < valueCount
+          ? std::clamp(values[static_cast<std::size_t>(valueIndex)], 0.0F, 1.0F)
+          : 0.0F;
     }
-    if (mainEnd > mainAxisLen) {
-      mainStart = std::max(0.0F, mainStart - (mainEnd - mainAxisLen));
-      mainEnd = mainAxisLen;
-    }
-    float crossStart =
-        snapToPixel(style.centered ? (crossAxisLen - crossSize) * 0.5F : crossAxisLen - crossSize, crossPixelScale);
-    float crossEnd = crossStart + crossSize;
-    if (crossStart < 0.0F) {
-      crossEnd -= crossStart;
-      crossStart = 0.0F;
-    }
-    if (crossEnd > crossAxisLen) {
-      crossStart = std::max(0.0F, crossStart - (crossEnd - crossAxisLen));
-      crossEnd = crossAxisLen;
-    }
-    const float t = barCount <= 1 ? 0.0F : static_cast<float>(i) / static_cast<float>(barCount - 1);
-    const Color color = colorAt(style.color1, style.color2, t);
 
-    if (horizontal) {
-      pushQuad(m_vertices, mainStart, crossStart, mainEnd, crossEnd, color);
-    } else {
-      pushQuad(m_vertices, crossStart, mainStart, crossEnd, mainEnd, color);
+    auto sampleValue = [&bandValues](float position) {
+      const auto count = static_cast<float>(bandValues.size());
+      const float clamped = std::clamp(position, 0.0F, count - 1.0F);
+      const float fi = std::floor(clamped);
+      const int i = static_cast<int>(fi);
+      const float frac = clamped - fi;
+      const auto get = [&bandValues](int idx) -> float {
+        return bandValues[static_cast<std::size_t>(std::clamp(idx, 0, static_cast<int>(bandValues.size()) - 1))];
+      };
+      if (frac == 0.0F) {
+        return get(i);
+      }
+      const float p0 = get(i - 1);
+      const float p1 = get(i);
+      const float p2 = get(i + 1);
+      const float p3 = get(i + 2);
+      const float t2 = frac * frac;
+      const float t3 = t2 * frac;
+      return 0.5F * ((2.0F * p1) + (-p0 + p2) * frac + (2.0F * p0 - 5.0F * p1 + 4.0F * p2 - p3) * t2
+                      + (-p0 + 3.0F * p1 - 3.0F * p2 + p3) * t3);
+    };
+
+    const int totalSlices = barCount * kTessellation;
+    const float sliceWidth = mainAxisLen / static_cast<float>(totalSlices);
+
+    auto waveCross = [&](float position) -> float {
+      const float value = sampleValue(position);
+      const float crossPixels = std::max(1.0F, std::floor(value * crossAxisLen * crossPixelScale + 0.5F));
+      return crossPixels / crossPixelScale;
+    };
+
+    for (int s = 0; s < totalSlices; ++s) {
+      const float pos0 = static_cast<float>(s) * static_cast<float>(barCount) / static_cast<float>(totalSlices);
+      const float pos1 = static_cast<float>(s + 1) * static_cast<float>(barCount) / static_cast<float>(totalSlices);
+      const float x0 = static_cast<float>(s) * sliceWidth;
+      const float x1 = static_cast<float>(s + 1) * sliceWidth;
+      const float topY0 = crossAxisLen - waveCross(pos0);
+      const float topY1 = crossAxisLen - waveCross(pos1);
+      const float bottomY = crossAxisLen;
+
+      const float t0 = barCount <= 1 ? 0.0F : std::clamp(pos0 / static_cast<float>(barCount - 1), 0.0F, 1.0F);
+      const float t1 = barCount <= 1 ? 0.0F : std::clamp(pos1 / static_cast<float>(barCount - 1), 0.0F, 1.0F);
+      const Color color0 = colorAt(style.color1, style.color2, t0);
+      const Color color1 = colorAt(style.color1, style.color2, t1);
+
+      pushVertex(m_vertices, x0, topY0, color0);
+      pushVertex(m_vertices, x0, bottomY, color0);
+      pushVertex(m_vertices, x1, topY1, color1);
+      pushVertex(m_vertices, x0, bottomY, color0);
+      pushVertex(m_vertices, x1, bottomY, color1);
+      pushVertex(m_vertices, x1, topY1, color1);
+    }
+  } else {
+    for (int i = 0; i < barCount; ++i) {
+      const int baseIndex = style.mirrored ? (i < valueCount ? valueCount - 1 - i : i - valueCount) : i;
+      const int valueIndex = style.reversed ? valueCount - 1 - baseIndex : baseIndex;
+      const float rawValue = valueIndex >= 0 && valueIndex < valueCount
+          ? std::clamp(values[static_cast<std::size_t>(valueIndex)], 0.0F, 1.0F)
+          : 0.0F;
+      float crossPixels = std::max(1.0F, std::floor(rawValue * crossAxisLen * crossPixelScale + 0.5F));
+      if (style.centered && crossPixels > 1.0F) {
+        crossPixels = std::max(2.0F, std::round(crossPixels * 0.5F) * 2.0F);
+      }
+      const float crossSize = crossPixels / crossPixelScale;
+
+      float mainStart = compactBars ? startOffset + static_cast<float>(i) * stride
+                                    : snapToPixel(startOffset + static_cast<float>(i) * stride, mainPixelScale);
+      float mainEnd = mainStart + barThickness;
+      if (mainStart < 0.0F) {
+        mainEnd -= mainStart;
+        mainStart = 0.0F;
+      }
+      if (mainEnd > mainAxisLen) {
+        mainStart = std::max(0.0F, mainStart - (mainEnd - mainAxisLen));
+        mainEnd = mainAxisLen;
+      }
+      float crossStart =
+          snapToPixel(style.centered ? (crossAxisLen - crossSize) * 0.5F : crossAxisLen - crossSize, crossPixelScale);
+      float crossEnd = crossStart + crossSize;
+      if (crossStart < 0.0F) {
+        crossEnd -= crossStart;
+        crossStart = 0.0F;
+      }
+      if (crossEnd > crossAxisLen) {
+        crossStart = std::max(0.0F, crossStart - (crossEnd - crossAxisLen));
+        crossEnd = crossAxisLen;
+      }
+      const float t = barCount <= 1 ? 0.0F : static_cast<float>(i) / static_cast<float>(barCount - 1);
+      const Color color = colorAt(style.color1, style.color2, t);
+
+      if (horizontal) {
+        pushQuad(m_vertices, mainStart, crossStart, mainEnd, crossEnd, color);
+      } else {
+        pushQuad(m_vertices, crossStart, mainStart, crossEnd, mainEnd, color);
+      }
     }
   }
 

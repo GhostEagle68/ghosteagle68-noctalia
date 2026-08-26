@@ -28,6 +28,9 @@ const noctalia::bar::WidgetDefinition<AudioVisualizerWidget::Options>& audioVisu
           field<&Options::centered>({
               .key = "centered",
           }),
+          field<&Options::wave>({
+              .key = "show_wave",
+          }),
           field<&Options::showWhenIdle>({
               .key = "show_when_idle",
           }),
