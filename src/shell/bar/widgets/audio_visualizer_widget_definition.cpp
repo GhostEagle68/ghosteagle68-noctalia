@@ -25,9 +25,13 @@ const noctalia::bar::WidgetDefinition<AudioVisualizerWidget::Options>& audioVisu
           field<&Options::reversed>({
               .key = "reversed",
           }),
-          field<&Options::centered>({
-              .key = "centered",
-          }),
+          field<&Options::centered>(
+              {.key = "centered",
+               .presentation =
+                   settings::WidgetSettingPresentation{
+                       .visibleWhen = settings::WidgetSettingVisibility{"show_wave", {"false"}},
+                   }}
+          ),
           field<&Options::wave>({
               .key = "show_wave",
           }),
