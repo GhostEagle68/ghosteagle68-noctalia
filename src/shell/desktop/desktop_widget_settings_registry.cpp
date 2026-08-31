@@ -275,7 +275,9 @@ namespace desktop_settings {
       circle.visibleWhen = analogOnly;
       add(std::move(circle));
     } else if (type == "audio_visualizer") {
-      add(intSpec("bands", 32, 4.0, 128.0, 4.0));
+      auto bands = intSpec("bands", 32, 4.0, 128.0, 4.0);
+      bands.visibleWhen = WidgetSettingVisibility{"show_wave", {"false"}};
+      add(std::move(bands));
       add(boolSpec("mirrored", true));
       add(boolSpec("reversed", false));
       auto centered = boolSpec("centered", true);
