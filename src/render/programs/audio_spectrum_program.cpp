@@ -172,6 +172,37 @@ void AudioSpectrumProgram::draw(
           : 0.0F;
     }
 
+    // Wave renders from a fixed number of control points pooled from the band data, so
+    // hill width follows the widget size and stays independent of the bands setting.
+    // The baseline lifts valleys so the silhouette reads as one rolling wave, not teeth.
+    constexpr int kWaveControlPoints = 20;
+    constexpr float kWaveBaseline = 0.18F;
+    const int pointCount = std::min(barCount, kWaveControlPoints);
+    std::vector<float> wavePoints(static_cast<std::size_t>(pointCount));
+    for (int i = 0; i < pointCount; ++i) {
+      const int s0 = i * barCount / pointCount;
+      const int s1 = std::max(s0 + 1, (i + 1) * barCount / pointCount);
+      float sum = 0.0F;
+      for (int j = s0; j < s1; ++j) {
+        sum += bandValues[static_cast<std::size_t>(j)];
+      }
+      wavePoints[static_cast<std::size_t>(i)] =
+          kWaveBaseline + (1.0F - kWaveBaseline) * std::pow(sum / static_cast<float>(s1 - s0), 0.4F);
+    }
+    bandValues = std::move(wavePoints);
+
+    // Blur across control points so raw FFT comb structure doesn't cut narrow teeth.
+    std::vector<float> smoothed(bandValues.size());
+    for (int pass = 0; pass < 3; ++pass) {
+      for (int i = 0; i < pointCount; ++i) {
+        const auto get = [&bandValues, pointCount](int idx) -> float {
+          return bandValues[static_cast<std::size_t>(std::clamp(idx, 0, pointCount - 1))];
+        };
+        smoothed[static_cast<std::size_t>(i)] = 0.25F * get(i - 1) + 0.5F * get(i) + 0.25F * get(i + 1);
+      }
+      bandValues = smoothed;
+    }
+
     auto sampleValue = [&bandValues](float position) {
       const auto count = static_cast<float>(bandValues.size());
       const float clamped = std::clamp(position, 0.0F, count - 1.0F);
@@ -190,50 +221,69 @@ void AudioSpectrumProgram::draw(
       const float p3 = get(i + 2);
       const float t2 = frac * frac;
       const float t3 = t2 * frac;
-      return 0.5F
-          * ((2.0F * p1)
-             + (-p0 + p2) * frac
-             + (2.0F * p0 - 5.0F * p1 + 4.0F * p2 - p3) * t2
-             + (-p0 + 3.0F * p1 - 3.0F * p2 + p3) * t3);
+      return (1.0F / 6.0F)
+          * ((-t3 + 3.0F * t2 - 3.0F * frac + 1.0F) * p0
+             + (3.0F * t3 - 6.0F * t2 + 4.0F) * p1
+             + (-3.0F * t3 + 3.0F * t2 + 3.0F * frac + 1.0F) * p2
+             + t3 * p3);
     };
 
-    const int totalSlices = barCount * kTessellation;
+    // Keep the polyline dense enough that wide surfaces don't reveal straight segments.
+    const auto minSlices = static_cast<int>(mainAxisLen * mainPixelScale / 3.0F);
+    const int totalSlices = std::clamp(minSlices, pointCount * kTessellation, 1024);
+    // Half-device-pixel skirt with a per-vertex alpha ramp acts as edge antialiasing;
+    // the rasterizer would otherwise stair-step the curved top.
+    const float aa = 0.5F / crossPixelScale;
     const float sliceWidth = mainAxisLen / static_cast<float>(totalSlices);
 
     auto waveCross = [&](float position) -> float {
-      const float value = sampleValue(position);
-      const float crossPixels = std::max(1.0F, std::floor(value * crossAxisLen * crossPixelScale + 0.5F));
-      return crossPixels / crossPixelScale;
+      return std::max(1.0F / crossPixelScale, sampleValue(position) * crossAxisLen);
     };
 
     for (int s = 0; s < totalSlices; ++s) {
-      const float pos0 = static_cast<float>(s) * static_cast<float>(barCount) / static_cast<float>(totalSlices);
-      const float pos1 = static_cast<float>(s + 1) * static_cast<float>(barCount) / static_cast<float>(totalSlices);
+      const float pos0 = static_cast<float>(s) * static_cast<float>(pointCount) / static_cast<float>(totalSlices);
+      const float pos1 = static_cast<float>(s + 1) * static_cast<float>(pointCount) / static_cast<float>(totalSlices);
       const float x0 = static_cast<float>(s) * sliceWidth;
       const float x1 = static_cast<float>(s + 1) * sliceWidth;
       const float topY0 = crossAxisLen - waveCross(pos0);
       const float topY1 = crossAxisLen - waveCross(pos1);
       const float bottomY = crossAxisLen;
 
-      const float t0 = barCount <= 1 ? 0.0F : std::clamp(pos0 / static_cast<float>(barCount - 1), 0.0F, 1.0F);
-      const float t1 = barCount <= 1 ? 0.0F : std::clamp(pos1 / static_cast<float>(barCount - 1), 0.0F, 1.0F);
+      const float t0 = pointCount <= 1 ? 0.0F : std::clamp(pos0 / static_cast<float>(pointCount - 1), 0.0F, 1.0F);
+      const float t1 = pointCount <= 1 ? 0.0F : std::clamp(pos1 / static_cast<float>(pointCount - 1), 0.0F, 1.0F);
       const Color color0 = colorAt(style.color1, style.color2, t0);
       const Color color1 = colorAt(style.color1, style.color2, t1);
+      Color fade0 = color0;
+      fade0.a = 0.0F;
+      Color fade1 = color1;
+      fade1.a = 0.0F;
 
       if (horizontal) {
-        pushVertex(m_vertices, x0, topY0, color0);
+        pushVertex(m_vertices, x0, topY0 - aa, fade0);
+        pushVertex(m_vertices, x1, topY1 - aa, fade1);
+        pushVertex(m_vertices, x0, topY0 + aa, color0);
+        pushVertex(m_vertices, x0, topY0 + aa, color0);
+        pushVertex(m_vertices, x1, topY1 - aa, fade1);
+        pushVertex(m_vertices, x1, topY1 + aa, color1);
+        pushVertex(m_vertices, x0, topY0 + aa, color0);
         pushVertex(m_vertices, x0, bottomY, color0);
-        pushVertex(m_vertices, x1, topY1, color1);
+        pushVertex(m_vertices, x1, topY1 + aa, color1);
         pushVertex(m_vertices, x0, bottomY, color0);
         pushVertex(m_vertices, x1, bottomY, color1);
-        pushVertex(m_vertices, x1, topY1, color1);
+        pushVertex(m_vertices, x1, topY1 + aa, color1);
       } else {
-        pushVertex(m_vertices, topY0, x0, color0);
+        pushVertex(m_vertices, topY0 - aa, x0, fade0);
+        pushVertex(m_vertices, topY1 - aa, x1, fade1);
+        pushVertex(m_vertices, topY0 + aa, x0, color0);
+        pushVertex(m_vertices, topY0 + aa, x0, color0);
+        pushVertex(m_vertices, topY1 - aa, x1, fade1);
+        pushVertex(m_vertices, topY1 + aa, x1, color1);
+        pushVertex(m_vertices, topY0 + aa, x0, color0);
         pushVertex(m_vertices, bottomY, x0, color0);
-        pushVertex(m_vertices, topY1, x1, color1);
+        pushVertex(m_vertices, topY1 + aa, x1, color1);
         pushVertex(m_vertices, bottomY, x0, color0);
         pushVertex(m_vertices, bottomY, x1, color1);
-        pushVertex(m_vertices, topY1, x1, color1);
+        pushVertex(m_vertices, topY1 + aa, x1, color1);
       }
     }
   } else {
