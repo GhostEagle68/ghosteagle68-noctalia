@@ -5,6 +5,7 @@ project('noctalia', ['c', 'cpp'],
     'cpp_extensions=false',
     'warning_level=0',   # applied selectively to our target; avoids noise in vendored code
     'b_ndebug=if-release',
+    'b_pch=true',
   ],
 )
 
@@ -1087,6 +1088,7 @@ noctalia_core_lib = static_library('noctalia_core',
   dependencies: _noctalia_dependencies,
   include_directories: _noctalia_inc,
   cpp_args: _noctalia_cpp_args,
+  cpp_pch: 'pch/pch.h',
 )
 
 noctalia_core_dep = declare_dependency(
