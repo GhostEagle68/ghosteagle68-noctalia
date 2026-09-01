@@ -155,6 +155,19 @@ git branch -D feat/whatever
 git push origin --delete feat/whatever
 ```
 
+## Git tooling
+
+`delta` is the global pager for `git diff/log/show` (line numbers on, `n`/`N` jump between
+diff hunks; flip `delta.dark` in `~/.gitconfig` if syntax colors look wrong for a light
+terminal). `difftastic` shows structural diffs, `git-absorb` folds fixes into the right
+commit before the pre-push rebase, `lazygit` is the TUI for the branch dance:
+
+```sh
+git difft                      # structural diff (difftastic via difftool)
+git absorb                     # uncommitted fixes -> fixup! commits on the right parents
+lazygit                        # TUI overview
+```
+
 ## Backing up these files
 
 Everything listed in `.git/info/exclude` (this file, the scripts, HANDOFF/PR-BODY notes)
