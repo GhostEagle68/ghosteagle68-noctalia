@@ -1,0 +1,6 @@
+# Meson's cpp_pch force-includes pch.h via '-include pch.h', but only a GCC
+# .gch exists to satisfy it since clangd cannot read GCC precompiled headers.
+# Drop the forced include so clangd parses each TU from its own includes,
+# identical to a -Db_pch=false build.
+CompileFlags:
+  Remove: ['-include', 'pch.h']

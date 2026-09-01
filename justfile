@@ -79,11 +79,14 @@ _clang_tidy m=mode *args:
     #!/usr/bin/env bash
     set -euo pipefail
     src_root="$(realpath src)"
+    pch_root="$(realpath pch)"
     # compile_commands.json stores build-relative paths, so clang-tidy emits header
     # diagnostics as ../src/...; the header-filter must match that form (an absolute
     # ^${src_root} anchor never matches, silently dropping every header diagnostic).
     # ../src/ also excludes vendored third_party/*/src/* headers.
-    run-clang-tidy -quiet -use-color -p "build-{{m}}" -j "$(nproc)" -header-filter='\.\./src/.*' {{args}} "^${src_root}/.*"
+    # cpp_pch force-includes pch.h, but only a GCC .gch satisfies it, which clang-tidy
+    # cannot read. point it at the plain header so the force-include resolves.
+    run-clang-tidy -quiet -use-color -p "build-{{m}}" -j "$(nproc)" -header-filter='\.\./src/.*' -extra-arg=-I"${pch_root}" {{args}} "^${src_root}/.*"
 
 lint m=mode: (_ensure-configured m)
     just _clang_tidy {{m}} '-warnings-as-errors=*'
