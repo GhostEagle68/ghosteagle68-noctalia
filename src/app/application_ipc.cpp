@@ -93,7 +93,6 @@
 #include "util/string_utils.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <csignal>
 #include <cstdint>
@@ -232,7 +231,7 @@ void Application::initIpc() {
   });
 
   m_ipcService.bind(noctalia::cli::msg::notificationInvokeLatest, [this](const std::string&) -> std::string {
-    // Mirror the toast left-click behaviour for the most recent active notification:
+    // Mirror the toast left-click behavior for the most recent active notification:
     // invoke its "default" action so the source application raises/focuses its window.
     // all() stores notifications oldest-first (push_back), so iterate in reverse for newest.
     const auto& notifications = m_notificationManager.all();
@@ -416,14 +415,14 @@ void Application::initIpc() {
   );
 
   m_ipcService.bind(noctalia::cli::msg::dpmsOn, [this](const std::string&) -> std::string {
-    if (!m_compositorPlatform.setOutputPower(true)) {
+    if (!setOutputPower(true)) {
       return "error: failed to execute dpms-on command\n";
     }
     return "ok\n";
   });
 
   m_ipcService.bind(noctalia::cli::msg::dpmsOff, [this](const std::string&) -> std::string {
-    if (!m_compositorPlatform.setOutputPower(false)) {
+    if (!setOutputPower(false)) {
       return "error: failed to execute dpms-off command\n";
     }
     return "ok\n";
@@ -567,8 +566,12 @@ void Application::initIpc() {
   m_osdOverlay.registerIpc(m_ipcService);
 
   if (m_brightnessService != nullptr) {
-    m_brightnessService->registerIpc(m_ipcService, [this]() {
-      m_brightnessOsd.suppressFor(std::chrono::milliseconds(250));
+    m_brightnessService->registerIpc(m_ipcService, [this](BrightnessService::BatchChangePhase phase) {
+      if (phase == BrightnessService::BatchChangePhase::Begin) {
+        m_brightnessOsd.beginBatch();
+      } else {
+        m_brightnessOsd.endBatch();
+      }
     });
   }
   if (m_keyboardBacklightService != nullptr) {
@@ -759,7 +762,7 @@ void Application::initIpc() {
   m_dock.registerIpc(m_ipcService);
   m_wallpaper.registerIpc(m_ipcService);
   greeter::registerIpc(
-      m_ipcService, m_configService, [this]() { return m_themeService.resolvedMode(); }, &m_compositorPlatform,
+      m_ipcService, m_configService, [this]() { return m_themeService.resolvedShellMode(); }, &m_compositorPlatform,
       [this]() { return m_logindService != nullptr; }
   );
   if (m_mprisService) {
@@ -800,6 +803,28 @@ bool Application::runShellCommandBlocking(const std::string& command) {
   return true;
 }
 
+bool Application::setOutputPower(bool on) {
+  const auto generation = ++m_outputPowerRequestGeneration;
+  m_lockScreen.cancelOutputPowerOff();
+  m_compositorPlatform.setOutputPowerOffPending(!on);
+  if (on) {
+    return m_compositorPlatform.setOutputPower(true);
+  }
+  const auto result = std::make_shared<std::optional<bool>>();
+  m_lockScreen.prepareForOutputPowerOff([this, generation, result](bool ready) {
+    if (generation != m_outputPowerRequestGeneration) {
+      return;
+    }
+    const bool success = ready && m_compositorPlatform.setOutputPower(false);
+    if (ready && !success) {
+      kLog.warn("failed to turn outputs off after preparing the lock frame");
+    }
+    m_compositorPlatform.setOutputPowerOffPending(false);
+    *result = success;
+  });
+  return result->has_value() ? **result : true;
+}
+
 bool Application::runIdleAction(const IdleActionRequest& action) {
   switch (action.kind) {
   case IdleActionKind::None:
@@ -812,9 +837,9 @@ bool Application::runIdleAction(const IdleActionRequest& action) {
     }
     return m_sessionActionRunner.lock();
   case IdleActionKind::ScreenOff:
-    return m_compositorPlatform.setOutputPower(false);
+    return setOutputPower(false);
   case IdleActionKind::ScreenOn:
-    return m_compositorPlatform.setOutputPower(true);
+    return setOutputPower(true);
   case IdleActionKind::Suspend:
     return m_sessionActionRunner.requestSuspendDetached();
   case IdleActionKind::LockAndSuspend:

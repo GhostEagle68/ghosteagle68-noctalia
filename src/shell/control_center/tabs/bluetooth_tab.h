@@ -1,9 +1,11 @@
 #pragma once
 
+#include "core/timer_manager.h"
 #include "dbus/bluetooth/bluetooth_agent.h"
 #include "dbus/bluetooth/bluetooth_service.h"
 #include "shell/control_center/tab.h"
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -32,6 +34,21 @@ private:
   void doUpdate(Renderer& renderer) override;
   void onPanelCardOpacityChanged(float opacity) override;
 
+  // Discovery started by this tab's Rescan. Pending until BlueZ confirms Discovering,
+  // so a stop still fires while StartDiscovery is in flight.
+  enum class DiscoveryLease : std::uint8_t {
+    None,
+    Pending,
+    Active,
+  };
+
+  // Reconciles the lease with the adapter state; drops it when discovery ended elsewhere.
+  void syncDiscoveryLease();
+  // Forgets the lease without asking BlueZ to stop.
+  void releaseDiscoveryLease();
+  // Releases the lease and stops the discovery this tab started.
+  void stopRequestedDiscovery();
+
   void syncHeader();
   void syncPairingCard();
   void rebuildDeviceList(Renderer& renderer);
@@ -52,6 +69,7 @@ private:
   Input* m_pairingInput = nullptr;
   Flex* m_pairingButtonRow = nullptr;
   Button* m_pairingAccept = nullptr;
+  Button* m_pairingTrustAndAllow = nullptr;
   Button* m_pairingReject = nullptr;
 
   ScrollView* m_listScroll = nullptr;
@@ -61,6 +79,9 @@ private:
   Toggle* m_discoverableToggle = nullptr;
   Button* m_rescanButton = nullptr;
   Spinner* m_scanSpinner = nullptr;
+
+  Timer m_discoveryTimer;
+  DiscoveryLease m_discoveryLease = DiscoveryLease::None;
 
   std::unordered_map<std::string, BluetoothDeviceRow*> m_deviceRows;
 

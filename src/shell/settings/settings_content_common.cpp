@@ -5,6 +5,7 @@
 #include "i18n/i18n.h"
 #include "shell/settings/settings_content.h"
 #include "ui/builders.h"
+#include "ui/controls/collapsible.h"
 #include "ui/palette.h"
 #include "ui/style.h"
 #include "util/string_utils.h"
@@ -15,6 +16,13 @@
 #include <utility>
 
 namespace settings {
+
+  namespace {
+    // Cards sit on the Surface window background and hold controls that fill SurfaceVariant at full
+    // opacity, so a full-strength card fill would match them. Mixing the theme's own elevated tone
+    // partway toward Surface keeps the palette hue and still reads distinct from those controls.
+    constexpr float kCardFillOpacity = 0.4F;
+  } // namespace
 
   bool isMonitorOverrideSettingPath(const std::vector<std::string>& path) {
     return path.size() >= 5 && path[0] == "bar" && path[2] == "monitor";
@@ -41,6 +49,9 @@ namespace settings {
     }
     if (key == "auto_hide") {
       return override->autoHide.has_value();
+    }
+    if (key == "auto_hide_delay_ms") {
+      return override->autoHideDelayMs.has_value();
     }
     if (key == "smart_auto_hide") {
       return override->smartAutoHide.has_value();
@@ -90,6 +101,9 @@ namespace settings {
     if (key == "background_opacity") {
       return override->backgroundOpacity.has_value();
     }
+    if (key == "compositor_blur") {
+      return override->compositorBlur.has_value();
+    }
     if (key == "border") {
       return override->border.has_value();
     }
@@ -113,6 +127,9 @@ namespace settings {
     }
     if (key == "capsule_border") {
       return override->widgetCapsuleBorderSpecified;
+    }
+    if (key == "capsule_border_width") {
+      return override->widgetCapsuleBorderWidth.has_value();
     }
     if (key == "capsule_foreground") {
       return override->widgetCapsuleForeground.has_value();
@@ -168,6 +185,86 @@ namespace settings {
         .fontWeight = fontWeight,
         .color = color,
     });
+  }
+
+  Flex* addSettingsCard(Flex& parent, std::string_view title, float scale) {
+    Flex* bodyRaw = nullptr;
+    auto card = ui::column(
+        {
+            .align = FlexAlign::Stretch,
+            .gap = Style::spaceSm * scale,
+            .configure =
+                [scale](Flex& container) {
+                  container.setPadding(Style::spaceSm * scale, Style::spaceMd * scale);
+                  container.setCardStyle(scale, kCardFillOpacity);
+                },
+        },
+        makeLabel(title, Style::fontSizeTitle * scale, colorSpecFromRole(ColorRole::OnSurface), FontWeight::Bold),
+        ui::column({
+            .out = &bodyRaw,
+            .align = FlexAlign::Stretch,
+            .gap = Style::spaceSm * scale,
+        })
+    );
+    parent.addChild(std::move(card));
+    return bodyRaw;
+  }
+
+  Flex* addSettingsGroupCard(SettingsGroupCardProps props) {
+    auto card = ui::column({.align = FlexAlign::Stretch, .configure = [scale = props.scale](Flex& container) {
+                              container.setPadding(Style::spaceSm * scale, Style::spaceMd * scale);
+                              container.setCardStyle(scale, kCardFillOpacity);
+                            }});
+    auto body = ui::column({
+        .align = FlexAlign::Stretch,
+        .gap = Style::spaceSm * props.scale,
+        .configure = [scale = props.scale](Flex& container) {
+          container.setPadding(Style::spaceSm * scale, 0.0F, 0.0F, 0.0F);
+        },
+    });
+    Flex* bodyRaw = body.get();
+    auto collapsible = std::make_unique<Collapsible>();
+    collapsible->setScale(props.scale);
+    collapsible->setHeaderPadding(Style::spaceXs, 0.0F);
+    collapsible->setHeader(makeLabel(
+        props.title, Style::fontSizeTitle * props.scale, colorSpecFromRole(ColorRole::OnSurface), FontWeight::Bold
+    ));
+    collapsible->setBody(std::move(body));
+    collapsible->setExpandedImmediate(props.expandedGroups.contains(props.group));
+
+    Collapsible* collapsibleRaw = collapsible.get();
+    std::unordered_set<std::string>* expandedGroups = &props.expandedGroups;
+    const std::string group = std::move(props.group);
+    if (props.pill != nullptr) {
+      props.pill->setOnClick([expandedGroups, group, pill = props.pill, collapsibleRaw,
+                              scrollToTop = props.scrollToTop]() {
+        if (expandedGroups->contains(group)) {
+          expandedGroups->erase(group);
+          pill->setVariant(ButtonVariant::Default);
+          collapsibleRaw->setExpanded(false);
+          return;
+        }
+        expandedGroups->insert(group);
+        pill->setVariant(ButtonVariant::Primary);
+        collapsibleRaw->setExpandedImmediate(true);
+        if (scrollToTop) {
+          scrollToTop(*collapsibleRaw);
+        }
+      });
+    }
+    collapsible->setOnToggle([expandedGroups, group, pill = props.pill](bool expanded) {
+      if (expanded) {
+        expandedGroups->insert(group);
+      } else {
+        expandedGroups->erase(group);
+      }
+      if (pill != nullptr) {
+        pill->setVariant(expanded ? ButtonVariant::Primary : ButtonVariant::Default);
+      }
+    });
+    card->addChild(std::move(collapsible));
+    props.parent.addChild(std::move(card));
+    return bodyRaw;
   }
 
   void updateSettingsStatusBanner(Flex& banner, Label& message, std::string_view text, bool error) {
@@ -227,9 +324,10 @@ namespace settings {
     case SettingsSection::Templates:
     case SettingsSection::Launcher:
     case SettingsSection::Security:
-    case SettingsSection::Services:
     case SettingsSection::Location:
+    case SettingsSection::Calendar:
       return true;
+    case SettingsSection::Services:
     case SettingsSection::Wallpaper:
     case SettingsSection::Desktop:
     case SettingsSection::Dock:
@@ -237,12 +335,14 @@ namespace settings {
     case SettingsSection::ControlCenter:
     case SettingsSection::Notifications:
     case SettingsSection::Osd:
+    case SettingsSection::Screenshot:
     case SettingsSection::Shell:
     case SettingsSection::Keybinds:
     case SettingsSection::System:
     case SettingsSection::Power:
     case SettingsSection::Hooks:
     case SettingsSection::Niri:
+    case SettingsSection::Umbriel:
     case SettingsSection::Bar:
     case SettingsSection::Plugins:
       return false;
@@ -260,10 +360,11 @@ namespace settings {
       return i18n::tr("settings.window.offline-mode-notice.launcher");
     case SettingsSection::Security:
       return i18n::tr("settings.window.offline-mode-notice.security");
-    case SettingsSection::Services:
-      return i18n::tr("settings.window.offline-mode-notice.services");
+    case SettingsSection::Calendar:
+      return i18n::tr("settings.window.offline-mode-notice.calendar");
     case SettingsSection::Location:
       return i18n::tr("settings.window.offline-mode-notice.location");
+    case SettingsSection::Services:
     case SettingsSection::Wallpaper:
     case SettingsSection::Desktop:
     case SettingsSection::Dock:
@@ -271,12 +372,14 @@ namespace settings {
     case SettingsSection::ControlCenter:
     case SettingsSection::Notifications:
     case SettingsSection::Osd:
+    case SettingsSection::Screenshot:
     case SettingsSection::Shell:
     case SettingsSection::Keybinds:
     case SettingsSection::System:
     case SettingsSection::Power:
     case SettingsSection::Hooks:
     case SettingsSection::Niri:
+    case SettingsSection::Umbriel:
     case SettingsSection::Bar:
     case SettingsSection::Plugins:
       return {};
@@ -381,6 +484,7 @@ namespace settings {
         {"suspend", i18n::tr("session.actions.suspend"), {}},
         {"lock_and_suspend", i18n::tr("session.actions.lock-and-suspend"), {}},
         {"reboot", i18n::tr("session.actions.reboot"), {}},
+        {"reboot_uefi", i18n::tr("session.actions.reboot-uefi"), {}},
         {"shutdown", i18n::tr("session.actions.shutdown"), {}},
         {"command", i18n::tr("session.actions.custom"), {}},
     };

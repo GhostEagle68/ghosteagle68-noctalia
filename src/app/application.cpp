@@ -2,6 +2,7 @@
 
 #include "app/main_loop.h"
 #include "compositors/compositor_detect.h"
+#include "compositors/umbriel/umbriel_audio_provider.h"
 #include "config/config_types.h"
 #include "core/build_info.h"
 #include "core/deferred_call.h"
@@ -16,6 +17,7 @@
 #include "dbus/idle/screensaver_poll_source.h"
 #include "dbus/idle/screensaver_service.h"
 #include "dbus/logind/logind_service.h"
+#include "dbus/modem/modem_manager_service.h"
 #include "dbus/mpris/mpris_service.h"
 #include "dbus/network/inetwork_service.h"
 #include "dbus/network/iwd_secret_agent.h"
@@ -180,6 +182,9 @@ Application::Application()
 }
 
 Application::~Application() {
+  m_compositorPlatform.setOutputPowerChangeCallback({});
+  ++m_outputPowerRequestGeneration;
+  m_lockScreen.cancelOutputPowerOff();
   ColorPickerDialog::setPresenter(nullptr);
   GlyphPickerDialog::setPresenter(nullptr);
   FileDialog::setPresenter(nullptr);
@@ -200,6 +205,10 @@ void Application::run(std::function<void()> startupReadyCallback) {
   initLogFile();
   initLogLevelFromEnvironment();
   kLog.info("noctalia {}", noctalia::build_info::displayVersion());
+  // Claim the tray watcher name first. The tray UI itself is wired up later.
+  // Item callbacks run from deferred work on the main loop, after the shell
+  // is initialized.
+  initEarlySessionBusAndTray();
   runStartupPhase("initServices", [this]() { initServices(); });
   runStartupPhase("initPlugins", [this]() {
     // Configure the plugin registry from [plugins] before any UI consumes it, and
@@ -275,7 +284,6 @@ void Application::run(std::function<void()> startupReadyCallback) {
   });
 #endif
 
-  m_trayInitTimer.start(std::chrono::milliseconds(500), [this]() { startTrayService(); });
   m_polkitInitTimer.start(std::chrono::milliseconds(1000), [this]() { syncPolkitAgent(); });
 
   m_mainLoop = std::make_unique<MainLoop>(m_wayland, m_bar, [this]() { return currentPollSources(); });

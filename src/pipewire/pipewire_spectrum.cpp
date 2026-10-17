@@ -167,11 +167,13 @@ bool PipeWireSpectrum::Stream::start() {
     return false;
   }
 
+  const char* const passiveMode = m_spectrum.m_service.serverSupportsPassiveFollow() ? "in-follow" : "true";
+
   auto* props = pw_properties_new(
       PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_MEDIA_NAME, "Noctalia Spectrum",
       PW_KEY_APP_NAME, "Noctalia Spectrum", PW_KEY_STREAM_MONITOR, "true", PW_KEY_STREAM_CAPTURE_SINK, "true",
-      PW_KEY_MEDIA_ROLE, "Music", PW_KEY_TARGET_OBJECT, m_targetObject.c_str(), PW_KEY_NODE_PASSIVE, "in-follow",
-      nullptr
+      // No media.role: WirePlumber restore-stream keys on media.role first, sharing volume across Music-role captures.
+      PW_KEY_TARGET_OBJECT, m_targetObject.c_str(), PW_KEY_NODE_PASSIVE, passiveMode, nullptr
   );
   if (props == nullptr) {
     kLog.warn("failed to create spectrum stream properties");
@@ -449,23 +451,21 @@ void PipeWireSpectrum::rebuildStream() {
   m_stream.reset();
   m_boundNodeId = 0;
   m_boundTargetObject.clear();
+  clearValues(true);
 
   const std::uint32_t target = resolvedTargetNodeId();
   const auto* targetNode = resolvedTargetNode();
   if (!hasListeners() || target == 0 || targetNode == nullptr) {
-    clearValues(true);
     return;
   }
   if (targetNode->name.empty()) {
     kLog.warn("spectrum target node {} has no PipeWire node name", target);
-    clearValues(true);
     return;
   }
 
   m_stream = std::make_unique<Stream>(*this, target, targetNode->name);
   if (!m_stream->start()) {
     m_stream.reset();
-    clearValues(true);
     return;
   }
 
@@ -483,12 +483,6 @@ void PipeWireSpectrum::rebuildStream() {
     resetListenerState(state, false);
   }
   m_nextFrameAt = std::chrono::steady_clock::now();
-  if (m_idle) {
-    for (const auto& [id, state] : m_listeners) {
-      (void)state;
-      emitChanged(id);
-    }
-  }
 }
 
 std::uint32_t PipeWireSpectrum::resolvedTargetNodeId() const noexcept {

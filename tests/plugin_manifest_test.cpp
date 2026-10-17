@@ -1,7 +1,9 @@
 #include "scripting/plugin_api.h"
 #include "scripting/plugin_manifest.h"
+#include "scripting/plugin_panel_shell.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -568,7 +570,8 @@ int main() {
       ok = expect(setting.numberDefault == 0.5, "double default should parse") && ok;
       ok = expect(setting.minValue == 0.0, "double min should parse") && ok;
       ok = expect(setting.maxValue == 1.0, "double max should parse") && ok;
-      ok = expect(setting.step == 0.05, "double step should parse") && ok;
+      ok = expect(std::abs(setting.step - 0.05) <= std::numeric_limits<double>::epsilon(), "double step should parse")
+          && ok;
     }
   }
 
@@ -1126,7 +1129,79 @@ int main() {
   const auto noCapture = scripting::parsePluginManifest(noCapturePath, &error);
   ok = expect(noCapture.has_value(), "a panel without capture_keys should parse") && ok;
   if (noCapture.has_value() && !noCapture->entries.empty()) {
-    ok = expect(noCapture->entries.front().panelCaptureKeys.empty(), "capture_keys should default to empty") && ok;
+    const auto& entry = noCapture->entries.front();
+    ok = expect(entry.panelCaptureKeys.empty(), "capture_keys should default to empty") && ok;
+    ok = expectEq(entry.panelLayerDefault, "top", "layer should default to top") && ok;
+    const auto layerField = std::ranges::find(entry.settings, "panel_layer", &scripting::ManifestField::key);
+    ok = expect(layerField != entry.settings.end(), "panel layer setting should be injected") && ok;
+    if (layerField != entry.settings.end()) {
+      ok = expectEq(layerField->stringDefault, "top", "injected layer setting should default to top") && ok;
+    }
+  }
+
+  const auto oldApiLayerPath = root / "old-api-layer/plugin.toml";
+  ok = writeManifest(
+           oldApiLayerPath,
+           "id = \"me/old-api-layer\"\n"
+           "name = \"Old API Layer\"\n"
+           "plugin_api = 29\n"
+           "[[panel]]\n"
+           "id = \"panel\"\n"
+           "entry = \"panel.luau\"\n"
+           "layer = \"overlay\"\n"
+       )
+      && ok;
+  error.clear();
+  ok = expect(
+           !scripting::parsePluginManifest(oldApiLayerPath, &error).has_value(),
+           "layer should require its plugin API level"
+       )
+      && ok;
+  ok = expectEq(error, "panel entry 'panel': layer requires plugin_api >= 30", "layer api gate error") && ok;
+
+  const auto badLayerPath = root / "bad-layer/plugin.toml";
+  ok = writeManifest(
+           badLayerPath,
+           "id = \"me/bad-layer\"\n"
+           "name = \"Bad Layer\"\n"
+           "plugin_api = 30\n"
+           "[[panel]]\n"
+           "id = \"panel\"\n"
+           "entry = \"panel.luau\"\n"
+           "layer = \"bottom\"\n"
+       )
+      && ok;
+  error.clear();
+  ok = expect(!scripting::parsePluginManifest(badLayerPath, &error).has_value(), "an unknown layer should be rejected")
+      && ok;
+  ok = expectEq(error, R"(panel entry 'panel': layer must be "top" or "overlay")", "layer vocabulary error") && ok;
+
+  const auto overlayLayerPath = root / "overlay-layer/plugin.toml";
+  ok = writeManifest(
+           overlayLayerPath,
+           "id = \"me/overlay-layer\"\n"
+           "name = \"Overlay Layer\"\n"
+           "plugin_api = 30\n"
+           "[[panel]]\n"
+           "id = \"panel\"\n"
+           "entry = \"panel.luau\"\n"
+           "layer = \"overlay\"\n"
+       )
+      && ok;
+  error.clear();
+  const auto overlayLayer = scripting::parsePluginManifest(overlayLayerPath, &error);
+  ok = expect(overlayLayer.has_value(), error.empty() ? "a valid layer should parse" : error.c_str()) && ok;
+  if (overlayLayer.has_value() && !overlayLayer->entries.empty()) {
+    const auto& entry = overlayLayer->entries.front();
+    ok = expectEq(entry.panelLayerDefault, "overlay", "layer default should parse") && ok;
+    const auto layerField = std::ranges::find(entry.settings, "panel_layer", &scripting::ManifestField::key);
+    ok = expect(layerField != entry.settings.end(), "panel layer setting should be injected") && ok;
+    if (layerField != entry.settings.end()) {
+      ok = expectEq(layerField->stringDefault, "overlay", "manifest layer should seed the user setting") && ok;
+    }
+    const auto settings = scripting::seedEntrySettings(entry, {{"panel_layer", std::string("top")}});
+    const auto shellConfig = scripting::resolvePluginPanelShellConfig(entry, settings);
+    ok = expectEq(shellConfig.layer, "top", "user layer override should win") && ok;
   }
 
   // A [[widget]] entry can declare bar gesture defaults, kept as raw strings: the gesture
@@ -1205,6 +1280,76 @@ int main() {
   error.clear();
   ok = expect(!scripting::parsePluginManifest(badActionPath, &error).has_value(), "a non-string action should fail")
       && ok;
+
+  // A [[widget]] entry can opt out of the bar's whole-widget hover highlight. The key sits on
+  // the entry itself, ahead of any [widget.*] subtable.
+  const auto hoverPath = root / "hover-highlight" / "plugin.toml";
+  ok = expect(
+           writeManifest(
+               hoverPath,
+               "id = \"me/hover-highlight\"\n"
+               "name = \"Hover Highlight\"\n"
+               "plugin_api = 34\n"
+               "[[widget]]\n"
+               "id = \"bar\"\n"
+               "entry = \"bar.luau\"\n"
+               "hover_highlight = false\n"
+           ),
+           "failed to write the hover highlight manifest"
+       )
+      && ok;
+  error.clear();
+  const auto hover = scripting::parsePluginManifest(hoverPath, &error);
+  ok = expect(hover.has_value(), error.empty() ? "a widget declaring hover_highlight should parse" : error.c_str())
+      && ok;
+  if (hover.has_value() && !hover->entries.empty()) {
+    ok = expect(!hover->entries.front().widgetHoverHighlight, "hover_highlight = false should be recorded") && ok;
+  }
+
+  const auto hoverOldApiPath = root / "hover-old-api" / "plugin.toml";
+  ok = expect(
+           writeManifest(
+               hoverOldApiPath,
+               "id = \"me/hover-old-api\"\n"
+               "name = \"Hover Old Api\"\n"
+               "plugin_api = 33\n"
+               "[[widget]]\n"
+               "id = \"bar\"\n"
+               "entry = \"bar.luau\"\n"
+               "hover_highlight = false\n"
+           ),
+           "failed to write the hover old api manifest"
+       )
+      && ok;
+  error.clear();
+  ok = expect(
+           !scripting::parsePluginManifest(hoverOldApiPath, &error).has_value(),
+           "hover_highlight below its plugin_api level should fail"
+       )
+      && ok;
+  ok = expectEq(error, "widget entry 'bar': hover_highlight requires plugin_api >= 34", "hover api gate error") && ok;
+
+  const auto hoverBadPath = root / "hover-bad" / "plugin.toml";
+  ok = expect(
+           writeManifest(
+               hoverBadPath,
+               "id = \"me/hover-bad\"\n"
+               "name = \"Hover Bad\"\n"
+               "plugin_api = 34\n"
+               "[[widget]]\n"
+               "id = \"bar\"\n"
+               "entry = \"bar.luau\"\n"
+               "hover_highlight = \"no\"\n"
+           ),
+           "failed to write the hover bad manifest"
+       )
+      && ok;
+  error.clear();
+  ok = expect(
+           !scripting::parsePluginManifest(hoverBadPath, &error).has_value(), "a non-bool hover_highlight should fail"
+       )
+      && ok;
+  ok = expectEq(error, "widget entry 'bar': hover_highlight must be a bool", "hover type error") && ok;
 
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
