@@ -38,6 +38,7 @@ public:
 private:
   void doLayout(Renderer& renderer) override;
   void doUpdate(Renderer& renderer) override;
+  void subscribeSpectrum();
   void pullSpectrumValues();
   void syncSpectrum(Renderer* renderer);
   void layoutContentSize(Renderer& renderer);

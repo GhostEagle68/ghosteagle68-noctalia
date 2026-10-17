@@ -47,12 +47,7 @@ void DesktopAudioVisualizerWidget::create() {
   m_visualizer = visualizer.get();
   rootNode->addChild(std::move(visualizer));
 
-  if (m_spectrum != nullptr) {
-    m_listenerId = m_spectrum->addChangeListener(m_bands, [this]() {
-      m_pendingSpectrumUpdate = true;
-      requestFrameTick();
-    });
-  }
+  subscribeSpectrum();
 
   setRoot(std::move(rootNode));
 }
@@ -104,6 +99,7 @@ bool DesktopAudioVisualizerWidget::applySetting(
     if (const auto* v = std::get_if<bool>(&value)) {
       m_wave = *v;
       m_visualizer->setWave(m_wave);
+      subscribeSpectrum();
       return true;
     }
     return false;
@@ -203,6 +199,20 @@ void DesktopAudioVisualizerWidget::doUpdate(Renderer& renderer) {
     requestLayout();
   }
   syncSpectrum(&renderer);
+}
+
+void DesktopAudioVisualizerWidget::subscribeSpectrum() {
+  if (m_spectrum == nullptr) {
+    return;
+  }
+  if (m_listenerId != 0) {
+    m_spectrum->removeChangeListener(m_listenerId);
+  }
+  m_listenerId = m_spectrum->addChangeListener(m_wave ? kAudioSpectrumWaveBands : m_bands, [this]() {
+    m_pendingSpectrumUpdate = true;
+    requestFrameTick();
+  });
+  m_pendingSpectrumUpdate = true;
 }
 
 void DesktopAudioVisualizerWidget::pullSpectrumValues() {

@@ -168,6 +168,10 @@ enum class AudioSpectrumOrientation : std::uint8_t {
   Vertical,
 };
 
+// Wave mode renders from this many control points, so wave visualizers request exactly this
+// many spectrum bands and ignore their `bands` setting.
+inline constexpr int kAudioSpectrumWaveBands = 32;
+
 struct AudioSpectrumStyle {
   Color color1{};
   Color color2{};

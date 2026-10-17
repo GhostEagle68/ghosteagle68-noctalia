@@ -39,7 +39,7 @@ void AudioVisualizerWidget::create() {
   root->addChild(std::move(visualizer));
 
   if (m_spectrum != nullptr) {
-    m_listenerId = m_spectrum->addChangeListener(m_bands, [this]() {
+    m_listenerId = m_spectrum->addChangeListener(m_wave ? kAudioSpectrumWaveBands : m_bands, [this]() {
       m_pendingSpectrumUpdate = true;
       requestFrameTick();
     });

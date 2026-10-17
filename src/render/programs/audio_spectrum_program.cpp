@@ -173,11 +173,10 @@ void AudioSpectrumProgram::draw(
     }
 
     // Wave renders from a fixed number of control points pooled from the band data, so
-    // hill width follows the widget size and stays independent of the bands setting.
+    // hill width follows the widget size; wave widgets request exactly this many bands.
     // The baseline lifts valleys so the silhouette reads as one rolling wave, not teeth.
-    constexpr int kWaveControlPoints = 32;
     constexpr float kWaveBaseline = 0.10F;
-    const int pointCount = std::min(barCount, kWaveControlPoints);
+    const int pointCount = std::min(barCount, kAudioSpectrumWaveBands);
     std::vector<float> wavePoints(static_cast<std::size_t>(pointCount));
     for (int i = 0; i < pointCount; ++i) {
       const int s0 = i * barCount / pointCount;
